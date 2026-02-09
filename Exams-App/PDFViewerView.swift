@@ -1,13 +1,13 @@
 // PDFViewerView.swift
-// Zeigt ein PDF an und legt eine durchsichtige Zeichenfläche (PKCanvasView) darüber.
+// Zeigt ein PDF an mit einer Zeichenfläche darüber.
 //
-// ARCHITEKTUR (wichtig zu verstehen):
-// SwiftUI kann kein PDFView direkt darstellen – PDFView ist ein UIKit-View.
-// Deshalb brauchen wir UIViewRepresentable als "Brücke" zwischen SwiftUI und UIKit.
+// ANSATZ:
+// Der PKCanvasView liegt ALS SUBVIEW im documentView des PDFView.
+// So scrollt/zoomt er automatisch mit dem PDF mit.
 //
-// Die Hierarchie ist:
-//   SwiftUI: PDFViewerView  →  enthält PDFCanvas (UIViewRepresentable)
-//   UIKit:   PDFContainerView  →  enthält PDFView + PKCanvasView
+// Der PKToolPicker wird an den canvasView gebunden.
+// Damit er sichtbar bleibt, muss der canvasView FirstResponder sein
+// UND der ToolPicker muss als eigene Instanz (nicht shared) gehalten werden.
 
 import SwiftUI
 import PDFKit
@@ -22,49 +22,36 @@ struct PDFViewerView: View {
         PDFCanvas(pdfName: pdfName)
             .navigationTitle(pdfName)
             .navigationBarTitleDisplayMode(.inline)
-            .ignoresSafeArea(edges: .bottom)    // PDF soll bis ganz unten gehen
+            .ignoresSafeArea(edges: .bottom)
     }
 }
 
 // MARK: - Brücke: SwiftUI ↔ UIKit
 
-/// UIViewRepresentable ist das Protokoll, das SwiftUI sagt:
-/// "Ich manage einen UIKit-View für dich."
-/// Du musst 2 Methoden implementieren: makeUIView und updateUIView.
 struct PDFCanvas: UIViewRepresentable {
     let pdfName: String
 
-    /// Wird EINMAL aufgerufen um den UIKit-View zu erstellen.
     func makeUIView(context: Context) -> PDFContainerView {
         PDFContainerView(pdfName: pdfName)
     }
 
-    /// Wird aufgerufen wenn sich SwiftUI-State ändert.
-    /// Wir brauchen hier nichts – unser View managed sich selbst.
     func updateUIView(_ uiView: PDFContainerView, context: Context) {}
 
-    /// Wird aufgerufen wenn der View ENTFERNT wird (z.B. zurück navigieren).
-    /// Perfekter Zeitpunkt zum Speichern!
     static func dismantleUIView(_ uiView: PDFContainerView, coordinator: ()) {
         uiView.saveDrawing()
     }
 }
 
-// MARK: - Der eigentliche UIKit-View
+// MARK: - Container View
 
-/// Enthält zwei Subviews übereinander:
-///   1. PDFView    (unten) – zeigt das PDF
-///   2. PKCanvasView (oben) – durchsichtige Zeichenfläche
 final class PDFContainerView: UIView {
 
     private let pdfView = PDFView()
-    private let canvasView = PKCanvasView()
+    let canvasView = PKCanvasView()
     private let pdfName: String
 
-    // Wir müssen den ToolPicker als Property halten, sonst wird er sofort freigegeben.
+    // ToolPicker muss ans UIWindow gebunden sein UND als Property gehalten werden.
     private var toolPicker: PKToolPicker?
-
-    // MARK: Init
 
     init(pdfName: String) {
         self.pdfName = pdfName
@@ -80,17 +67,15 @@ final class PDFContainerView: UIView {
     // MARK: PDF einrichten
 
     private func setupPDF() {
-        pdfView.displayMode = .singlePageContinuous   // Alle Seiten untereinander
+        pdfView.displayMode = .singlePageContinuous
         pdfView.displayDirection = .vertical
-        pdfView.autoScales = true                      // Passt sich an Bildschirmbreite an
+        pdfView.autoScales = true
         pdfView.backgroundColor = .systemGray6
 
-        // PDF aus dem Bundle laden
         if let url = Bundle.main.url(forResource: pdfName, withExtension: "pdf") {
             pdfView.document = PDFDocument(url: url)
         }
 
-        // PDFView füllt den ganzen Container aus (Auto Layout)
         pdfView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(pdfView)
         NSLayoutConstraint.activate([
@@ -101,57 +86,52 @@ final class PDFContainerView: UIView {
         ])
     }
 
-    // MARK: Zeichenfläche einrichten
+    // MARK: Canvas einrichten
 
     private func setupCanvas() {
-        canvasView.backgroundColor = .clear     // Durchsichtig! Man sieht das PDF darunter.
+        canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
-        canvasView.drawingPolicy = .anyInput    // Finger + Pencil können zeichnen
+        canvasView.drawingPolicy = .pencilOnly
+        // Eigenes Scrollen AUS – das PDFView übernimmt Scrollen/Zoomen
+        canvasView.isScrollEnabled = false
     }
 
     // MARK: View-Lifecycle
 
-    /// Wird aufgerufen wenn unser View in ein Window eingefügt wird.
-    /// Erst jetzt können wir den CanvasView an den PDFView "anhängen".
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard window != nil else { return }
+        guard let window else { return }
 
         attachCanvas()
+        toolPicker = PKToolPicker.shared(for: window)
         showToolPicker()
     }
 
-    /// Wird bei jedem Layout-Pass aufgerufen (z.B. Rotation, Zoom).
-    /// Wir stellen sicher, dass der Canvas immer die richtige Größe hat.
     override func layoutSubviews() {
         super.layoutSubviews()
         attachCanvas()
     }
 
-    /// Hängt den Canvas als Subview an den internen "documentView" des PDFView.
-    /// Das ist der Trick: So scrollt und zoomt der Canvas MIT dem PDF.
     private func attachCanvas() {
         guard let documentView = pdfView.documentView else { return }
 
         if canvasView.superview != documentView {
             documentView.addSubview(canvasView)
         }
-
-        // Canvas muss immer so groß wie das gesamte PDF-Dokument sein
         canvasView.frame = documentView.bounds
     }
 
-    /// Zeigt die PencilKit Werkzeugleiste (Stift, Radierer, Farben, ...).
+    /// ToolPicker anzeigen – die "Island" mit Stift/Radierer/Farben.
     private func showToolPicker() {
-        guard let window else { return }
+        guard let toolPicker else { return }
 
-        if toolPicker == nil {
-            toolPicker = PKToolPicker.shared(for: window)
+        toolPicker.addObserver(canvasView)
+
+        // Nächster Runloop: SwiftUI hat manchmal den FirstResponder noch nicht bereit
+        DispatchQueue.main.async {
+            self.canvasView.becomeFirstResponder()
+            toolPicker.setVisible(true, forFirstResponder: self.canvasView)
         }
-
-        toolPicker?.addObserver(canvasView)
-        toolPicker?.setVisible(true, forFirstResponder: canvasView)
-        canvasView.becomeFirstResponder()
     }
 
     // MARK: Speichern & Laden
