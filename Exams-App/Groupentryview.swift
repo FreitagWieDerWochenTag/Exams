@@ -1,7 +1,6 @@
 // GroupEntryView.swift
-// Eingabe der Schule / Gruppe.
-// Zeigt nach dem Login den eingeloggten User an.
-// Je nach Rolle geht es danach zur Lehrer- oder Schueler-Ansicht.
+// Zeigt den eingeloggten User und Gruppen-Eingabe.
+// Navigiert zur Lehrer- oder Schueler-Ansicht.
 
 import SwiftUI
 
@@ -21,7 +20,7 @@ struct GroupEntryView: View {
 
             Spacer()
 
-            // User-Info (nach Login sichtbar)
+            // User-Info (nach Login)
             if auth.isSignedIn {
                 VStack(spacing: 4) {
                     Image(systemName: "person.crop.circle.fill")
@@ -38,7 +37,7 @@ struct GroupEntryView: View {
                 }
             }
 
-            // Icon + Titel
+            // Gruppen-Eingabe
             VStack(spacing: 8) {
                 Image(systemName: "building.2.fill")
                     .font(.system(size: 40))
@@ -50,7 +49,6 @@ struct GroupEntryView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Textfeld
             TextField("z.B. HTL-3AHIT", text: $groupName)
                 .textFieldStyle(.roundedBorder)
                 .font(.title3)
@@ -58,7 +56,6 @@ struct GroupEntryView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.characters)
 
-            // Weiter-Button
             Button {
                 navigateToNext = true
             } label: {

@@ -1,11 +1,11 @@
-// ExamsApp.swift
-// Einstiegspunkt – wie int main() in C.
-// Erstellt das AuthViewModel und gibt es als EnvironmentObject an alle Views weiter.
+// Exams_AppApp.swift
+// Einstiegspunkt der App.
+// Erstellt das AuthViewModel und gibt es als EnvironmentObject an alle Views.
 
 import SwiftUI
 
 @main
-struct ExamsApp: App {
+struct Exams_AppApp: App {
     @StateObject private var auth = AuthViewModel()
 
     var body: some Scene {

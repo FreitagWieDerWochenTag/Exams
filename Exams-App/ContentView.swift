@@ -1,11 +1,10 @@
 // ContentView.swift
-// Startbildschirm:
-// 1. Erst Microsoft Login
-// 2. Dann Rolle waehlen (Lehrer / Schueler)
+// 1. Microsoft Login
+// 2. Rolle waehlen (Lehrer / Schueler)
+// 3. Weiter zur GroupEntryView
 
 import SwiftUI
 
-/// Die zwei Rollen in der App.
 enum UserRole {
     case teacher
     case student
@@ -69,7 +68,6 @@ struct ContentView: View {
                     .padding(.horizontal, 40)
                 }
 
-                // Fehlermeldung
                 if let error = auth.errorMessage {
                     Text(error)
                         .foregroundStyle(.red)

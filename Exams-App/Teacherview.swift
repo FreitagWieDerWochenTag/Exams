@@ -1,11 +1,5 @@
 // TeacherView.swift
-// Lehrer-Ansicht: PDF aus der Dateien-App auswählen und an die Gruppe senden.
-//
-// NEUES KONZEPT: .fileImporter
-// Das ist ein SwiftUI-Modifier, der den System-Datei-Picker öffnet.
-// Er gibt uns eine URL zur ausgewählten Datei zurück.
-// Wir müssen "startAccessingSecurityScopedResource()" aufrufen,
-// weil die Datei außerhalb unserer Sandbox liegt (Sicherheit!).
+// Lehrer-Ansicht: PDF aus der Dateien-App auswaehlen und an den RPi senden.
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -17,6 +11,7 @@ struct TeacherView: View {
     @State private var selectedFileName: String?
     @State private var selectedFileData: Data?
     @State private var uploadStatus: String?
+    @State private var isUploading = false
 
     var body: some View {
         VStack(spacing: 32) {
@@ -32,13 +27,13 @@ struct TeacherView: View {
                     .font(.title2.bold())
             }
 
-            // PDF auswählen
+            // PDF auswaehlen
             Button {
                 showFilePicker = true
             } label: {
                 HStack {
                     Image(systemName: "doc.badge.plus")
-                    Text(selectedFileName ?? "PDF auswählen")
+                    Text(selectedFileName ?? "PDF auswaehlen")
                 }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
@@ -49,23 +44,28 @@ struct TeacherView: View {
             }
             .padding(.horizontal, 40)
 
-            // Senden-Button (nur sichtbar wenn ein PDF ausgewählt ist)
+            // Senden-Button (nur sichtbar wenn ein PDF ausgewaehlt ist)
             if selectedFileData != nil {
                 Button {
                     uploadPDF()
                 } label: {
                     HStack {
+                        if isUploading {
+                            ProgressView()
+                                .tint(.white)
+                        }
                         Image(systemName: "paperplane.fill")
-                        Text("An Schüler senden")
+                        Text("An Schueler senden")
                     }
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.green)
+                    .background(isUploading ? Color.gray : Color.green)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.horizontal, 40)
+                .disabled(isUploading)
             }
 
             // Status-Meldung
@@ -79,10 +79,9 @@ struct TeacherView: View {
             Spacer()
         }
         .navigationTitle("Lehrer")
-        // System-Datei-Picker für PDFs
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.pdf],      // Nur PDFs erlauben
+            allowedContentTypes: [.pdf],
             allowsMultipleSelection: false
         ) { result in
             handleFileSelection(result)
@@ -96,13 +95,10 @@ struct TeacherView: View {
         case .success(let urls):
             guard let url = urls.first else { return }
 
-            // Security Scope: Wir müssen "um Erlaubnis fragen" um auf die Datei zuzugreifen,
-            // weil sie außerhalb unserer App-Sandbox liegt.
             guard url.startAccessingSecurityScopedResource() else {
-                uploadStatus = "❌ Kein Zugriff auf die Datei"
+                uploadStatus = "Kein Zugriff auf die Datei"
                 return
             }
-            // defer = wird IMMER am Ende des Blocks ausgeführt (wie finally in Java/C#)
             defer { url.stopAccessingSecurityScopedResource() }
 
             do {
@@ -110,19 +106,51 @@ struct TeacherView: View {
                 selectedFileName = url.lastPathComponent
                 uploadStatus = nil
             } catch {
-                uploadStatus = "❌ Fehler beim Lesen: \(error.localizedDescription)"
+                uploadStatus = "Fehler beim Lesen: \(error.localizedDescription)"
             }
 
         case .failure(let error):
-            uploadStatus = "❌ \(error.localizedDescription)"
+            uploadStatus = "\(error.localizedDescription)"
         }
     }
 
-    // MARK: - Upload (Platzhalter für RPi-Kommunikation)
+    // MARK: - Upload an RPi
 
     private func uploadPDF() {
-        // TODO: Hier kommt später der HTTP POST an den Raspberry Pi.
-        // Für jetzt nur eine Bestätigung.
-        uploadStatus = "✅ \(selectedFileName ?? "PDF") bereit zum Senden an Gruppe \(group)"
+        guard let data = selectedFileData,
+              let name = selectedFileName else { return }
+
+        isUploading = true
+        uploadStatus = "Wird gesendet ..."
+
+        // Prefer a completion-labeled API if that's the declared signature.
+        // If your RPiService exposes an async version, use the Task-based branch below instead and remove this one.
+        RPiService.shared.uploadTest(fileName: name, fileData: data, completion: { success in
+            DispatchQueue.main.async {
+                isUploading = false
+                if success {
+                    uploadStatus = "\(name) erfolgreich an Gruppe \(group) gesendet"
+                } else {
+                    uploadStatus = "Senden fehlgeschlagen. Ist der RPi erreichbar?"
+                }
+            }
+        })
+        /*
+        // If RPiService exposes an async variant like:
+        // func uploadTest(fileName: String, fileData: Data, group: String) async -> Bool
+        // you can use this instead of the completion-based call above:
+        Task {
+            let success = await RPiService.shared.uploadTest(fileName: name, fileData: data, group: group)
+            await MainActor.run {
+                isUploading = false
+                if success {
+                    uploadStatus = "\(name) erfolgreich an Gruppe \(group) gesendet"
+                } else {
+                    uploadStatus = "Senden fehlgeschlagen. Ist der RPi erreichbar?"
+                }
+            }
+        }
+        */
     }
 }
+

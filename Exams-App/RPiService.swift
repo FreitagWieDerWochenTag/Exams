@@ -59,4 +59,33 @@ class RPiService {
         }.resume()
     }
 
+    // PDF hochladen (Lehrer -> RPi)
+    func uploadTest(fileName: String, fileData: Data, completion: @escaping (Bool) -> Void) {
+        let url = URL(string: APIConfig.baseURL + "/api/teacher/tests")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("TEACHER", forHTTPHeaderField: "X-ROLE")
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async {
+                completion((200...299).contains(status))
+            }
+        }.resume()
+    }
+     
 }
