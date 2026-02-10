@@ -15,6 +15,8 @@ final class AuthViewModel: ObservableObject {
     @Published var isSignedIn = false
     @Published var role: AppRole = .unknown
     @Published var errorMessage: String? = nil
+    @Published var userName: String = ""
+    @Published var userEmail: String = ""
 
     private let clientId = "e9150ef3-3c14-44ad-92b0-6b738e9e28c5"
 
@@ -76,12 +78,16 @@ final class AuthViewModel: ObservableObject {
             print("=== msalApp is nil, configure() failed ===")
             return
         }
+        
         guard let vc = UIApplication.shared.topMostViewController() else {
             print("=== topMostViewController is nil ===")
             return
         }
+        print("=== ViewController found: \(type(of: vc)) ===")
 
         let webParams = MSALWebviewParameters(authPresentationViewController: vc)
+        // System-Webview erzwingen (statt embedded)
+        webParams.webviewType = .authenticationSession
         let params = MSALInteractiveTokenParameters(
             scopes: scopes,
             webviewParameters: webParams
@@ -90,6 +96,18 @@ final class AuthViewModel: ObservableObject {
         do {
             let result = try await msalApp.acquireToken(with: params)
             isSignedIn = true
+            
+            // User-Info aus dem MSAL-Result holen
+            userName = result.account.username ?? "Unbekannt"
+            userEmail = result.account.username ?? ""
+            
+            // Auch den Anzeigenamen via Graph API laden
+            do {
+                let profile = try await loadUserProfile(accessToken: result.accessToken)
+                if !profile.isEmpty { userName = profile }
+            } catch {
+                print("Profil laden fehlgeschlagen: \(error)")
+            }
 
             do {
                 let detectedRole = try await loadEducationRole(accessToken: result.accessToken)
@@ -109,6 +127,29 @@ final class AuthViewModel: ObservableObject {
             print("==========================")
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: - User Profile (Graph API)
+    private func loadUserProfile(accessToken: String) async throws -> String {
+        let url = URL(string: "https://graph.microsoft.com/v1.0/me")!
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        
+        // E-Mail aus Graph holen (zuverlaessiger als MSAL account.username)
+        if let mail = json?["mail"] as? String, !mail.isEmpty {
+            await MainActor.run { userEmail = mail }
+        } else if let upn = json?["userPrincipalName"] as? String {
+            await MainActor.run { userEmail = upn }
+        }
+        
+        return json?["displayName"] as? String ?? ""
     }
 
     // MARK: - Education API (best effort)
