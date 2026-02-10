@@ -1,17 +1,13 @@
-//
-//  Exams_AppApp.swift
-//  Exams-App
-//
-//  Created by 187hahaxD on 09.02.2026.
-//
-
 import SwiftUI
 
 @main
-struct ExamsApp: App {
+struct Exams_AppApp: App {
+    @StateObject private var auth = AuthViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(auth)
         }
     }
 }

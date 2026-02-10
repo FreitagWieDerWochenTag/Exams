@@ -18,7 +18,6 @@ struct PDFViewerView: View {
     // Referenz auf den UIKit-Container, damit wir an die Zeichnung kommen
     @State private var containerView: PDFContainerView?
     @State private var exportedURL: URL?
-    @State private var showShareSheet = false
 
     var body: some View {
         PDFViewRepresentable(pdfName: pdfName, containerRef: $containerView)
@@ -33,46 +32,42 @@ struct PDFViewerView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showShareSheet) {
-                if let url = exportedURL {
-                    ShareSheet(url: url)
-                }
-            }
     }
 
     private func exportAndShare() {
         guard let container = containerView else { return }
         let drawing = container.canvasView.drawing
 
-        if let url = PDFExporter.export(pdfName: pdfName, drawing: drawing) {
-            exportedURL = url
-            showShareSheet = true
+        guard let url = PDFExporter.export(pdfName: pdfName, drawing: drawing) else {
+            print("Export fehlgeschlagen")
+            return
         }
-    }
-}
 
-// MARK: - Share Sheet
-
-/// Zeigt den System-Dialog zum Teilen/Speichern (AirDrop, Mail, Dateien, ...).
-/// Wir nutzen UIActivityViewController direkt als UIKit-Controller,
-/// weil SwiftUI's ShareLink mit temporaeren Dateien nicht gut funktioniert.
-struct ShareSheet: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        // Die URL muss als NSURL uebergeben werden, damit der Share-Sheet
-        // sie als Datei erkennt und Vorschau/AirDrop/Speichern anbietet.
-        let controller = UIActivityViewController(
-            activityItems: [url as NSURL],
+        // UIActivityViewController direkt ueber UIKit praesentieren.
+        // .sheet + UIViewControllerRepresentable funktioniert unzuverlaessig.
+        let activityVC = UIActivityViewController(
+            activityItems: [url],
             applicationActivities: nil
         )
-        // Auf dem iPad muss der Popover-Anchor gesetzt werden,
-        // sonst crasht die App. sourceView wird spaeter automatisch gesetzt.
-        controller.popoverPresentationController?.permittedArrowDirections = .any
-        return controller
-    }
 
-    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+        // Auf dem iPad MUSS ein sourceView/sourceRect gesetzt werden, sonst crasht es.
+        // Wir nehmen das aktuelle Window.
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = scene.windows.first?.rootViewController else { return }
+
+        // Den obersten sichtbaren Controller finden (auch bei Navigation/Sheets)
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+
+        activityVC.popoverPresentationController?.sourceView = topVC.view
+        activityVC.popoverPresentationController?.sourceRect = CGRect(
+            x: topVC.view.bounds.midX, y: 50, width: 0, height: 0
+        )
+
+        topVC.present(activityVC, animated: true)
+    }
 }
 
 // MARK: - Bruecke: SwiftUI <-> UIKit
