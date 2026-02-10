@@ -9,25 +9,21 @@
 // NEUES KONZEPT: NavigationPath / navigationDestination
 // Statt NavigationLink (der sofort navigiert) nutzen wir programmatische Navigation.
 // Das gibt uns Kontrolle: Wir können VOR der Navigation noch Dinge tun (z.B. AAC starten).
-
 import SwiftUI
 
 struct StudentView: View {
+
     let group: String
 
-    // Simuliert ob ein Test verfügbar ist.
-    // Wird später durch einen echten Server-Check ersetzt.
-    @State private var availableTest: String? = "Leo_RPi"
-
-    // Wenn true, navigieren wir zum PDF-Viewer.
+    @State private var availableTest: String? = nil
     @State private var startedTest = false
+    @State private var isLoading = true
 
     var body: some View {
         VStack(spacing: 32) {
 
             Spacer()
 
-            // Gruppen-Info
             VStack(spacing: 8) {
                 Image(systemName: "graduationcap.fill")
                     .font(.system(size: 50))
@@ -36,15 +32,19 @@ struct StudentView: View {
                     .font(.title2.bold())
             }
 
-            // Test-Status
-            if let testName = availableTest {
+            if isLoading {
 
-                // Test ist verfügbar
+                ProgressView("Prüfung wird geladen …")
+                    .padding()
+
+            } else if let testName = availableTest {
+
                 VStack(spacing: 16) {
                     HStack(spacing: 12) {
                         Image(systemName: "doc.text.fill")
                             .font(.title2)
                             .foregroundStyle(.orange)
+
                         VStack(alignment: .leading) {
                             Text(testName)
                                 .font(.headline)
@@ -52,13 +52,13 @@ struct StudentView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+
                         Spacer()
                     }
                     .padding()
                     .background(Color.orange.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
 
-                    // "Test starten" Button
                     Button {
                         startTest()
                     } label: {
@@ -77,7 +77,7 @@ struct StudentView: View {
                 .padding(.horizontal, 40)
 
             } else {
-                // Kein Test verfügbar
+
                 VStack(spacing: 12) {
                     Image(systemName: "clock.fill")
                         .font(.system(size: 40))
@@ -95,21 +95,37 @@ struct StudentView: View {
             Spacer()
         }
         .navigationTitle("Schüler")
-        // Programmatische Navigation: wenn startedTest true wird → navigiere zum PDFViewer
+        .onAppear {
+            loadAvailableTest()
+        }
         .navigationDestination(isPresented: $startedTest) {
-            // TODO: Hier später den echten PDF-Namen vom Server verwenden.
-            // Für jetzt nehmen wir den Test-Namen als PDF-Name.
-            PDFViewerView(pdfName: availableTest ?? "")
+            if let testName = availableTest {
+                PDFViewerView(pdfName: testName)
+            }
         }
     }
 
-    // MARK: - Test starten
+    // MARK: - Server
+
+    private func loadAvailableTest() {
+        RPiService.shared.fetchTests { list in
+            DispatchQueue.main.async {
+                self.availableTest = list.first?.filename
+                self.isLoading = false
+            }
+        }
+    }
+
 
     private func startTest() {
-        // TODO: Hier später AAC-Modus aktivieren
-        // UIAccessibility.requestGuidedAccessSession(...)
+        guard let testName = availableTest else { return }
 
-        // Navigation zum PDF-Viewer auslösen
-        startedTest = true
+        RPiService.shared.downloadTest(filename: testName) { url in
+            DispatchQueue.main.async {
+                if url != nil {
+                    startedTest = true
+                }
+            }
+        }
     }
 }

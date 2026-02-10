@@ -8,10 +8,10 @@
 import SwiftUI
 
 @main
-struct ExamsApp: App {
+struct Exams_AppApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            StudentView(group: "4AHITS")   // ⬅️ DAS ist wichtig
         }
     }
 }
