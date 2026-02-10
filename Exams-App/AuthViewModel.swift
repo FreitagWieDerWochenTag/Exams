@@ -16,18 +16,38 @@ final class AuthViewModel: ObservableObject {
     @Published var role: AppRole = .unknown
     @Published var errorMessage: String? = nil
 
-    // 🔑 HIER DEINE CLIENT ID EINTRAGEN
     private let clientId = "e9150ef3-3c14-44ad-92b0-6b738e9e28c5"
-    private var redirectUri: String { "msauth.\(Bundle.main.bundleIdentifier!)://auth" }
-    private let authorityUrl = "https://login.microsoftonline.com/organizations"
 
-    private let scopes = ["User.Read", "Organization.Read.All"]
+    private var redirectUri: String {
+        "msauth.\(Bundle.main.bundleIdentifier!)://auth"
+    }
+
+    private let authorityUrl = "https://login.microsoftonline.com/organizations"
+    private let scopes = ["User.Read"]
     private let roleKey = "cachedUserRole"
 
     private var msalApp: MSALPublicClientApplication?
 
+    // MARK: - MSAL LOGGING (DEBUG)
+    private func enableMSALLogging() {
+        print("BUNDLE:", Bundle.main.bundleIdentifier ?? "nil")
+        print("REDIRECT:", redirectUri)
+
+        MSALGlobalConfig.loggerConfig.logLevel = .verbose
+
+        MSALGlobalConfig.loggerConfig.setLogCallback { level, message, containsPII in
+            if let message = message {
+#if DEBUG
+                print("MSAL [\(level)] PII=\(containsPII): \(message)")
+#endif
+            }
+        }
+    }
+
     // MARK: - Setup
     func configure() {
+        enableMSALLogging()
+
         do {
             let authority = try MSALAuthority(url: URL(string: authorityUrl)!)
             let config = MSALPublicClientApplicationConfig(
@@ -36,7 +56,15 @@ final class AuthViewModel: ObservableObject {
                 authority: authority
             )
             msalApp = try MSALPublicClientApplication(configuration: config)
+            print("=== MSAL CONFIGURE OK ===")
         } catch {
+            let nsError = error as NSError
+            print("=== MSAL CONFIGURE ERROR ===")
+            print("Domain:", nsError.domain)
+            print("Code:", nsError.code)
+            print("Description:", nsError.localizedDescription)
+            print("UserInfo:", nsError.userInfo)
+            print("============================")
             errorMessage = error.localizedDescription
         }
     }
@@ -44,8 +72,14 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Login
     func signIn() async {
         errorMessage = nil
-        guard let msalApp else { return }
-        guard let vc = UIApplication.shared.topMostViewController() else { return }
+        guard let msalApp else {
+            print("=== msalApp is nil, configure() failed ===")
+            return
+        }
+        guard let vc = UIApplication.shared.topMostViewController() else {
+            print("=== topMostViewController is nil ===")
+            return
+        }
 
         let webParams = MSALWebviewParameters(authPresentationViewController: vc)
         let params = MSALInteractiveTokenParameters(
@@ -66,6 +100,13 @@ final class AuthViewModel: ObservableObject {
             }
 
         } catch {
+            let nsError = error as NSError
+            print("=== MSAL SIGN IN ERROR ===")
+            print("Domain:", nsError.domain)
+            print("Code:", nsError.code)
+            print("Description:", nsError.localizedDescription)
+            print("UserInfo:", nsError.userInfo)
+            print("==========================")
             errorMessage = error.localizedDescription
         }
     }
@@ -131,4 +172,3 @@ extension UIApplication {
         return baseVC
     }
 }
-

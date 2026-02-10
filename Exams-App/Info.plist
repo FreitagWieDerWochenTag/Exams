@@ -8,12 +8,17 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>msal</string>
+			<string>com.microsoft.adalv1</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.jf.exams-app</string>
+				<string>msauth.janfreitag.examsapp</string>
 			</array>
 		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>msauthv2</string>
+		<string>msauthv3</string>
 	</array>
 </dict>
 </plist>
