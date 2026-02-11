@@ -45,7 +45,7 @@ struct GroupEntryView: View {
             Text("Gib deine Gruppe ein")
                 .foregroundStyle(.secondary)
 
-            TextField("z.B. 3AHWII", text: $groupCode)
+            TextField("z.B. 4AHITS", text: $groupCode)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled(true)
                 .padding()

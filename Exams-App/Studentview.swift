@@ -79,16 +79,8 @@ struct StudentView: View {
             Spacer()
         }
         .navigationTitle("Schueler")
-        .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(role: .destructive) {
-                    auth.signOut()
-                    dismiss()
-                } label: {
-                    Text("Abmelden")
-                }
-            }
+            
         }
         .onAppear { loadAvailableTest() }
         .navigationDestination(isPresented: $startedTest) {
@@ -118,6 +110,4 @@ struct StudentView: View {
             }
         }
     }
-
-
 }

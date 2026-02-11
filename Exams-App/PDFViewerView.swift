@@ -1,10 +1,7 @@
 // PDFViewerView.swift
 // Zeigt ein PDF an mit einer Zeichenflaeche (PKCanvasView) darueber.
-// Oben rechts gibt es einen "Abgeben"-Button der das PDF mit Zeichnungen exportiert.
-//
-// Architektur:
-//   SwiftUI:  PDFViewerView  ->  PDFViewRepresentable (Bruecke)
-//   UIKit:    PDFContainerView  ->  PDFView + PKCanvasView
+// Oben links gibt es einen "Testbeenden"-Button mit Nachfrage "wirklich beenden?".
+// Oben rechts gibt es KEINEN Button mehr.
 
 import SwiftUI
 import PDFKit
@@ -15,58 +12,46 @@ import PencilKit
 struct PDFViewerView: View {
     let pdfName: String
 
-    // Referenz auf den UIKit-Container, damit wir an die Zeichnung kommen
     @State private var containerView: PDFContainerView?
-    @State private var exportedURL: URL?
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showExitConfirm = false
 
     var body: some View {
         PDFViewRepresentable(pdfName: pdfName, containerRef: $containerView)
             .navigationTitle(pdfName)
             .navigationBarTitleDisplayMode(.inline)
+
+            // Default-Zurueck-Button verstecken, wir machen eigenen
+            .navigationBarBackButtonHidden(true)
+
+            // Toolbar: NUR links "Test beenden"
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        exportAndShare()
+                        showExitConfirm = true
                     } label: {
-                        Label("Abgeben", systemImage: "paperplane.fill")
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                            Text("Test beenden")
+                        }
                     }
                 }
             }
-    }
 
-    private func exportAndShare() {
-        guard let container = containerView else { return }
-        let drawing = container.canvasView.drawing
-
-        guard let url = PDFExporter.export(pdfName: pdfName, drawing: drawing) else {
-            print("Export fehlgeschlagen")
-            return
-        }
-
-        // UIActivityViewController direkt ueber UIKit praesentieren.
-        // .sheet + UIViewControllerRepresentable funktioniert unzuverlaessig.
-        let activityVC = UIActivityViewController(
-            activityItems: [url],
-            applicationActivities: nil
-        )
-
-        // Auf dem iPad MUSS ein sourceView/sourceRect gesetzt werden, sonst crasht es.
-        // Wir nehmen das aktuelle Window.
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootVC = scene.windows.first?.rootViewController else { return }
-
-        // Den obersten sichtbaren Controller finden (auch bei Navigation/Sheets)
-        var topVC = rootVC
-        while let presented = topVC.presentedViewController {
-            topVC = presented
-        }
-
-        activityVC.popoverPresentationController?.sourceView = topVC.view
-        activityVC.popoverPresentationController?.sourceRect = CGRect(
-            x: topVC.view.bounds.midX, y: 50, width: 0, height: 0
-        )
-
-        topVC.present(activityVC, animated: true)
+            // Nachfrage-Dialog
+            .confirmationDialog(
+                "Test abgeben?",
+                isPresented: $showExitConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Ja, abgeben", role: .destructive) {
+                    dismiss()
+                }
+                Button("Abbrechen", role: .cancel) {}
+            } message: {
+                Text("Der Test ist danach nicht mehr bearbeitbar")
+            }
     }
 }
 
@@ -138,9 +123,15 @@ final class PDFContainerView: UIView {
         pdfView.autoScales = true
         pdfView.backgroundColor = .systemGray6
 
-        if let url = Bundle.main.url(forResource: pdfName, withExtension: "pdf"),
-           let doc = PDFDocument(url: url) {
+        // PDF aus Documents-Ordner laden (heruntergeladen vom Server)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = docs.appendingPathComponent(pdfName)
+
+        if let doc = PDFDocument(url: fileURL) {
             pdfView.document = doc
+            print("=== PDF geladen: \(fileURL.path) ===")
+        } else {
+            print("=== PDF nicht gefunden: \(fileURL.path) ===")
         }
 
         addSubview(pdfView)
@@ -157,7 +148,7 @@ final class PDFContainerView: UIView {
     private func setupCanvasView() {
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
-        canvasView.drawingPolicy = .pencilOnly   // Nur Apple Pencil zeichnet, Finger scrollen
+        canvasView.drawingPolicy = .pencilOnly
     }
 
     // MARK: View-Lifecycle
@@ -168,7 +159,6 @@ final class PDFContainerView: UIView {
 
         attachCanvas()
 
-        // ToolPicker ans aktuelle Window binden
         if toolPicker == nil {
             toolPicker = PKToolPicker.shared(for: window)
         }
@@ -179,7 +169,6 @@ final class PDFContainerView: UIView {
         super.layoutSubviews()
         attachCanvas()
 
-        // Falls SwiftUI/Rotation den FirstResponder "klaut": ToolPicker wieder zeigen
         if window != nil {
             showToolPicker()
         }
@@ -201,7 +190,6 @@ final class PDFContainerView: UIView {
 
         toolPicker.addObserver(canvasView)
 
-        // Naechster Runloop: SwiftUI hat manchmal den FirstResponder noch nicht bereit
         DispatchQueue.main.async {
             self.canvasView.becomeFirstResponder()
             toolPicker.setVisible(true, forFirstResponder: self.canvasView)
