@@ -101,6 +101,38 @@ class RPiService {
             }
         }.resume()
     }
+    
+    func submitTest(group: String,
+                    filename: String,
+                    pdfData: Data,
+                    completion: @escaping (Bool) -> Void) {
+
+        let boundary = UUID().uuidString
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)/\(filename)/submit")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
+        body.append(pdfData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async {
+                completion((200...299).contains(status))
+            }
+        }.resume()
+    }
+
 
      
 }

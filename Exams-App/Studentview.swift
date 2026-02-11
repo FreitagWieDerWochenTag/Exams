@@ -85,7 +85,7 @@ struct StudentView: View {
         .onAppear { loadAvailableTest() }
         .navigationDestination(isPresented: $startedTest) {
             if let testName = availableTest {
-                PDFViewerView(pdfName: testName)
+                PDFViewerView(group: group, pdfName: testName)
             }
         }
     }
