@@ -106,7 +106,7 @@ final class AuthViewModel: ObservableObject {
                 userName = profile
             } else { loadCachedUserInfo() }
 
-            if let detectedRole = try? await roleTask {
+            if let detectedRole = try? await roleTask, detectedRole != .unknown {
                 role = detectedRole
                 saveRole(detectedRole)
             } else { loadCachedRole() }
@@ -162,10 +162,13 @@ final class AuthViewModel: ObservableObject {
                 userName = profile
             }
 
-            if let detectedRole = try? await roleTask {
+            if let detectedRole = try? await roleTask, detectedRole != .unknown {
                 role = detectedRole
                 saveRole(detectedRole)
-            } else { loadCachedRole() }
+            } else {
+                // API hat nichts brauchbares -> Cache versuchen
+                loadCachedRole()
+            }
 
             saveUserInfo()
 
@@ -220,12 +223,18 @@ final class AuthViewModel: ObservableObject {
         req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: req)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: data, encoding: .utf8) ?? "nil"
+        print("=== Education API Status: \(statusCode) ===")
+        print("=== Education API Body: \(body) ===")
+
+        guard statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let role = (json?["primaryRole"] as? String)?.lowercased()
+        print("=== Education primaryRole: \(role ?? "nil") ===")
 
         if role == "teacher" { return .teacher }
         if role == "student" { return .student }
