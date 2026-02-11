@@ -99,14 +99,25 @@ struct StudentView: View {
     }
 
     private func loadAvailableTest() {
-        // DEMO
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            self.availableTest = "Mathe"
-            self.isLoading = false
+        RPiService.shared.fetchTests(group: group) { list in
+            DispatchQueue.main.async {
+                self.availableTest = list.first?.filename
+                self.isLoading = false
+            }
         }
     }
 
     private func startTest() {
-        startedTest = true
+        guard let testName = availableTest else { return }
+
+        RPiService.shared.downloadTest(group: group, filename: testName) { url in
+            DispatchQueue.main.async {
+                if url != nil {
+                    startedTest = true
+                }
+            }
+        }
     }
+
+
 }
