@@ -20,8 +20,8 @@ class RPiService {
     }
 
     // Liste der Tests holen
-    func fetchTests(completion: @escaping ([TestFile]) -> Void) {
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests")!
+    func fetchTests(group: String, completion: @escaping ([TestFile]) -> Void) {
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
@@ -37,9 +37,10 @@ class RPiService {
         }.resume()
     }
 
+
     // PDF laden
-    func downloadTest(filename: String, completion: @escaping (URL?) -> Void) {
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(filename)")!
+    func downloadTest(group: String, filename: String, completion: @escaping (URL?) -> Void) {
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)/\(filename)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
@@ -59,8 +60,14 @@ class RPiService {
         }.resume()
     }
 
+
+
     // PDF hochladen (Lehrer -> RPi)
-    func uploadTest(fileName: String, fileData: Data, completion: @escaping (Bool) -> Void) {
+    func uploadTest(group: String,
+                    fileName: String,
+                    fileData: Data,
+                    completion: @escaping (Bool) -> Void) {
+
         let url = URL(string: APIConfig.baseURL + "/api/teacher/tests")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -71,11 +78,18 @@ class RPiService {
 
         var body = Data()
 
+        // ✅ GROUP FIELD (NEU!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"group\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(group)\r\n".data(using: .utf8)!)
+
+        // ✅ PDF FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
         body.append("\r\n".data(using: .utf8)!)
+
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         request.httpBody = body
@@ -87,5 +101,6 @@ class RPiService {
             }
         }.resume()
     }
+
      
 }

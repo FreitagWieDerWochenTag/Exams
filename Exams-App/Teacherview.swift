@@ -129,7 +129,9 @@ struct TeacherView: View {
         isUploading = true
         uploadStatus = "Wird gesendet ..."
 
-        RPiService.shared.uploadTest(fileName: name, fileData: data) { success in
+        RPiService.shared.uploadTest(group: group,
+                                     fileName: name,
+                                     fileData: data) { success in
             DispatchQueue.main.async {
                 isUploading = false
                 uploadStatus = success
