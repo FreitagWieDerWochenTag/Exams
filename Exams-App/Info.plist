@@ -8,7 +8,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.microsoft.adalv1</string>
+			<string>msal</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>msauth.janfreitag.examsapp</string>
@@ -20,5 +20,10 @@
 		<string>msauthv2</string>
 		<string>msauthv3</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

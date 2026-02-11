@@ -1,11 +1,14 @@
 // TeacherView.swift
-// Lehrer-Ansicht: PDF aus der Dateien-App auswaehlen und an den RPi senden.
+// Lehrer-Ansicht: PDF aus der Dateien-App auswaehlen und hochladen.
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct TeacherView: View {
     let group: String
+
+    @EnvironmentObject var auth: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showFilePicker = false
     @State private var selectedFileName: String?
@@ -18,7 +21,6 @@ struct TeacherView: View {
 
             Spacer()
 
-            // Gruppen-Info
             VStack(spacing: 8) {
                 Image(systemName: "person.fill")
                     .font(.system(size: 50))
@@ -44,15 +46,14 @@ struct TeacherView: View {
             }
             .padding(.horizontal, 40)
 
-            // Senden-Button (nur sichtbar wenn ein PDF ausgewaehlt ist)
+            // Senden-Button
             if selectedFileData != nil {
                 Button {
                     uploadPDF()
                 } label: {
                     HStack {
                         if isUploading {
-                            ProgressView()
-                                .tint(.white)
+                            ProgressView().tint(.white)
                         }
                         Image(systemName: "paperplane.fill")
                         Text("An Schueler senden")
@@ -68,10 +69,9 @@ struct TeacherView: View {
                 .disabled(isUploading)
             }
 
-            // Status-Meldung
             if let status = uploadStatus {
                 Text(status)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
@@ -79,6 +79,17 @@ struct TeacherView: View {
             Spacer()
         }
         .navigationTitle("Lehrer")
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(role: .destructive) {
+                    auth.signOut()
+                    dismiss()
+                } label: {
+                    Text("Abmelden")
+                }
+            }
+        }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [.pdf],
@@ -88,13 +99,10 @@ struct TeacherView: View {
         }
     }
 
-    // MARK: - Datei verarbeiten
-
     private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-
             guard url.startAccessingSecurityScopedResource() else {
                 uploadStatus = "Kein Zugriff auf die Datei"
                 return
@@ -106,15 +114,13 @@ struct TeacherView: View {
                 selectedFileName = url.lastPathComponent
                 uploadStatus = nil
             } catch {
-                uploadStatus = "Fehler beim Lesen: \(error.localizedDescription)"
+                uploadStatus = "Fehler: \(error.localizedDescription)"
             }
 
         case .failure(let error):
-            uploadStatus = "\(error.localizedDescription)"
+            uploadStatus = "Fehler: \(error.localizedDescription)"
         }
     }
-
-    // MARK: - Upload an RPi
 
     private func uploadPDF() {
         guard let data = selectedFileData,
@@ -123,34 +129,13 @@ struct TeacherView: View {
         isUploading = true
         uploadStatus = "Wird gesendet ..."
 
-        // Prefer a completion-labeled API if that's the declared signature.
-        // If your RPiService exposes an async version, use the Task-based branch below instead and remove this one.
-        RPiService.shared.uploadTest(fileName: name, fileData: data, completion: { success in
+        RPiService.shared.uploadTest(fileName: name, fileData: data) { success in
             DispatchQueue.main.async {
                 isUploading = false
-                if success {
-                    uploadStatus = "\(name) erfolgreich an Gruppe \(group) gesendet"
-                } else {
-                    uploadStatus = "Senden fehlgeschlagen. Ist der RPi erreichbar?"
-                }
-            }
-        })
-        /*
-        // If RPiService exposes an async variant like:
-        // func uploadTest(fileName: String, fileData: Data, group: String) async -> Bool
-        // you can use this instead of the completion-based call above:
-        Task {
-            let success = await RPiService.shared.uploadTest(fileName: name, fileData: data, group: group)
-            await MainActor.run {
-                isUploading = false
-                if success {
-                    uploadStatus = "\(name) erfolgreich an Gruppe \(group) gesendet"
-                } else {
-                    uploadStatus = "Senden fehlgeschlagen. Ist der RPi erreichbar?"
-                }
+                uploadStatus = success
+                    ? "\(name) erfolgreich gesendet"
+                    : "Senden fehlgeschlagen"
             }
         }
-        */
     }
 }
-

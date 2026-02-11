@@ -15,7 +15,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FEC01C1A2F3B32CE00E08DB6 /* Exceptions for "Exams-App" folder in "Exams-App" target */ = {
+		FEC01C2B2F3BA62C00E08DB6 /* Exceptions for "Exams-App" folder in "Exams-App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -28,7 +28,7 @@
 		FEC01BEB2F39CB8100E08DB6 /* Exams-App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FEC01C1A2F3B32CE00E08DB6 /* Exceptions for "Exams-App" folder in "Exams-App" target */,
+				FEC01C2B2F3BA62C00E08DB6 /* Exceptions for "Exams-App" folder in "Exams-App" target */,
 			);
 			path = "Exams-App";
 			sourceTree = "<group>";

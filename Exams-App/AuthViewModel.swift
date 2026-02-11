@@ -17,6 +17,7 @@ final class AuthViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var userName: String = ""
     @Published var userEmail: String = ""
+    @Published var isBusy: Bool = false
 
     private let clientId = "e9150ef3-3c14-44ad-92b0-6b738e9e28c5"
 
@@ -26,29 +27,34 @@ final class AuthViewModel: ObservableObject {
 
     private let authorityUrl = "https://login.microsoftonline.com/organizations"
     private let scopes = ["User.Read"]
+
+    // UserDefaults Keys
     private let roleKey = "cachedUserRole"
+    private let nameKey = "cachedUserName"
+    private let emailKey = "cachedUserEmail"
 
     private var msalApp: MSALPublicClientApplication?
+    private var interactiveLoginRunning = false
+    private static var didSetupLogger = false
 
-    // MARK: - MSAL LOGGING (DEBUG)
-    private func enableMSALLogging() {
-        print("BUNDLE:", Bundle.main.bundleIdentifier ?? "nil")
-        print("REDIRECT:", redirectUri)
-
-        MSALGlobalConfig.loggerConfig.logLevel = .verbose
-
+    // MARK: - MSAL Logging (nur 1x)
+    private func enableMSALLoggingOnce() {
+        guard !Self.didSetupLogger else { return }
+        Self.didSetupLogger = true
+        MSALGlobalConfig.loggerConfig.logLevel = .warning
         MSALGlobalConfig.loggerConfig.setLogCallback { level, message, containsPII in
-            if let message = message {
 #if DEBUG
-                print("MSAL [\(level)] PII=\(containsPII): \(message)")
-#endif
+            if let message = message {
+                print("MSAL [\(level)]: \(message)")
             }
+#endif
         }
     }
 
-    // MARK: - Setup
+    // MARK: - Setup (nur 1x)
     func configure() {
-        enableMSALLogging()
+        if msalApp != nil { return }
+        enableMSALLoggingOnce()
 
         do {
             let authority = try MSALAuthority(url: URL(string: authorityUrl)!)
@@ -57,37 +63,85 @@ final class AuthViewModel: ObservableObject {
                 redirectUri: redirectUri,
                 authority: authority
             )
+            config.cacheConfig.keychainSharingGroup = "com.microsoft.adalcache"
             msalApp = try MSALPublicClientApplication(configuration: config)
             print("=== MSAL CONFIGURE OK ===")
         } catch {
-            let nsError = error as NSError
-            print("=== MSAL CONFIGURE ERROR ===")
-            print("Domain:", nsError.domain)
-            print("Code:", nsError.code)
-            print("Description:", nsError.localizedDescription)
-            print("UserInfo:", nsError.userInfo)
-            print("============================")
+            print("=== MSAL CONFIGURE ERROR: \(error) ===")
             errorMessage = error.localizedDescription
+            return
+        }
+
+        Task { await tryAutoLogin() }
+    }
+
+    // MARK: - Auto Login (Silent)
+    private func tryAutoLogin() async {
+        guard let msalApp else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let accounts = try msalApp.allAccounts()
+            guard let account = accounts.first else {
+                print("=== Kein gecachter Account ===")
+                loadCachedUserInfo()
+                loadCachedRole()
+                return
+            }
+
+            let silentParams = MSALSilentTokenParameters(scopes: scopes, account: account)
+            let result = try await msalApp.acquireTokenSilent(with: silentParams)
+            print("=== Silent Login OK ===")
+
+            isSignedIn = true
+            userName = result.account.username ?? "Unbekannt"
+            userEmail = result.account.username ?? ""
+
+            // Profil + Rolle parallel laden
+            async let profileTask: String = loadUserProfile(accessToken: result.accessToken)
+            async let roleTask: AppRole = loadEducationRole(accessToken: result.accessToken)
+
+            if let profile = try? await profileTask, !profile.isEmpty {
+                userName = profile
+            } else { loadCachedUserInfo() }
+
+            if let detectedRole = try? await roleTask {
+                role = detectedRole
+                saveRole(detectedRole)
+            } else { loadCachedRole() }
+
+            saveUserInfo()
+
+        } catch {
+            print("=== Auto Login fehlgeschlagen: \(error) ===")
+            loadCachedUserInfo()
+            loadCachedRole()
         }
     }
 
-    // MARK: - Login
+    // MARK: - Interaktiver Login
     func signIn() async {
+        if isBusy || interactiveLoginRunning { return }
+
         errorMessage = nil
-        guard let msalApp else {
-            print("=== msalApp is nil, configure() failed ===")
-            return
-        }
-        
-        guard let vc = UIApplication.shared.topMostViewController() else {
+        guard let msalApp else { return }
+
+        guard let vc = topMostViewController() else {
             print("=== topMostViewController is nil ===")
             return
         }
-        print("=== ViewController found: \(type(of: vc)) ===")
+
+        isBusy = true
+        interactiveLoginRunning = true
+        defer {
+            interactiveLoginRunning = false
+            isBusy = false
+        }
 
         let webParams = MSALWebviewParameters(authPresentationViewController: vc)
-        // System-Webview erzwingen (statt embedded)
         webParams.webviewType = .authenticationSession
+
         let params = MSALInteractiveTokenParameters(
             scopes: scopes,
             webviewParameters: webParams
@@ -96,40 +150,49 @@ final class AuthViewModel: ObservableObject {
         do {
             let result = try await msalApp.acquireToken(with: params)
             isSignedIn = true
-            
-            // User-Info aus dem MSAL-Result holen
+
             userName = result.account.username ?? "Unbekannt"
             userEmail = result.account.username ?? ""
-            
-            // Auch den Anzeigenamen via Graph API laden
-            do {
-                let profile = try await loadUserProfile(accessToken: result.accessToken)
-                if !profile.isEmpty { userName = profile }
-            } catch {
-                print("Profil laden fehlgeschlagen: \(error)")
+
+            // Profil + Rolle parallel laden
+            async let profileTask: String = loadUserProfile(accessToken: result.accessToken)
+            async let roleTask: AppRole = loadEducationRole(accessToken: result.accessToken)
+
+            if let profile = try? await profileTask, !profile.isEmpty {
+                userName = profile
             }
 
-            do {
-                let detectedRole = try await loadEducationRole(accessToken: result.accessToken)
+            if let detectedRole = try? await roleTask {
                 role = detectedRole
                 saveRole(detectedRole)
-            } catch {
-                loadCachedRole()
-            }
+            } else { loadCachedRole() }
+
+            saveUserInfo()
 
         } catch {
             let nsError = error as NSError
-            print("=== MSAL SIGN IN ERROR ===")
-            print("Domain:", nsError.domain)
-            print("Code:", nsError.code)
-            print("Description:", nsError.localizedDescription)
-            print("UserInfo:", nsError.userInfo)
-            print("==========================")
+            print("=== MSAL SIGN IN ERROR: \(nsError.code) \(nsError.localizedDescription) ===")
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - User Profile (Graph API)
+    // MARK: - Logout
+    func signOut() {
+        if let msalApp {
+            for acc in (try? msalApp.allAccounts()) ?? [] {
+                try? msalApp.remove(acc)
+            }
+        }
+        isSignedIn = false
+        role = .unknown
+        userName = ""
+        userEmail = ""
+        UserDefaults.standard.removeObject(forKey: roleKey)
+        UserDefaults.standard.removeObject(forKey: nameKey)
+        UserDefaults.standard.removeObject(forKey: emailKey)
+    }
+
+    // MARK: - Graph API
     private func loadUserProfile(accessToken: String) async throws -> String {
         let url = URL(string: "https://graph.microsoft.com/v1.0/me")!
         var req = URLRequest(url: url)
@@ -141,18 +204,16 @@ final class AuthViewModel: ObservableObject {
         }
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        
-        // E-Mail aus Graph holen (zuverlaessiger als MSAL account.username)
+
         if let mail = json?["mail"] as? String, !mail.isEmpty {
-            await MainActor.run { userEmail = mail }
+            userEmail = mail
         } else if let upn = json?["userPrincipalName"] as? String {
-            await MainActor.run { userEmail = upn }
+            userEmail = upn
         }
-        
+
         return json?["displayName"] as? String ?? ""
     }
 
-    // MARK: - Education API (best effort)
     private func loadEducationRole(accessToken: String) async throws -> AppRole {
         let url = URL(string: "https://graph.microsoft.com/v1.0/education/me")!
         var req = URLRequest(url: url)
@@ -171,7 +232,7 @@ final class AuthViewModel: ObservableObject {
         return .unknown
     }
 
-    // MARK: - Local role storage
+    // MARK: - Local storage
     func setRoleManually(_ newRole: AppRole) {
         role = newRole
         saveRole(newRole)
@@ -189,18 +250,26 @@ final class AuthViewModel: ObservableObject {
         }
         role = saved
     }
-}
 
-// MARK: - UIKit Helper
-extension UIApplication {
-    func topMostViewController(base: UIViewController? = nil) -> UIViewController? {
-        let baseVC = base ??
-        connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .rootViewController
+    private func saveUserInfo() {
+        UserDefaults.standard.set(userName, forKey: nameKey)
+        UserDefaults.standard.set(userEmail, forKey: emailKey)
+    }
 
+    private func loadCachedUserInfo() {
+        userName = UserDefaults.standard.string(forKey: nameKey) ?? ""
+        userEmail = UserDefaults.standard.string(forKey: emailKey) ?? ""
+    }
+
+    // MARK: - ViewController helper
+    private func topMostViewController(base: UIViewController? = nil) -> UIViewController? {
+        let baseVC = base ?? (
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }?
+                .rootViewController
+        )
         if let nav = baseVC as? UINavigationController {
             return topMostViewController(base: nav.visibleViewController)
         }

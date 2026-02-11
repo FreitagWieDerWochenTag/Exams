@@ -1,63 +1,60 @@
 // GroupEntryView.swift
-// Zeigt den eingeloggten User und Gruppen-Eingabe.
-// Navigiert zur Lehrer- oder Schueler-Ansicht.
+// Zeigt User-Info, Gruppen-Eingabe.
+// Oben links: Abmelden (zurueck zum Login)
+// Oben rechts: Demo-Wechsel Lehrer/Schueler
 
 import SwiftUI
 
 struct GroupEntryView: View {
-    let role: UserRole
-
     @EnvironmentObject var auth: AuthViewModel
-    @State private var groupName: String = ""
-    @State private var navigateToNext = false
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var groupCode: String = ""
+    @State private var showNext = false
+
+    private var isTeacher: Bool { auth.role == .teacher }
 
     private var canContinue: Bool {
-        !groupName.trimmingCharacters(in: .whitespaces).isEmpty
+        !groupCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: 24) {
 
             Spacer()
 
-            // User-Info (nach Login)
-            if auth.isSignedIn {
-                VStack(spacing: 4) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 50))
-                        .foregroundStyle(.green)
-                    Text(auth.userName)
-                        .font(.title3.bold())
-                    Text(auth.userEmail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Rolle: \(auth.role.rawValue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // Gruppen-Eingabe
-            VStack(spacing: 8) {
-                Image(systemName: "building.2.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.blue)
-                Text("Schule / Gruppe")
-                    .font(.title2.bold())
-                Text("Gib den Namen deiner Gruppe ein.")
+            // User-Info
+            VStack(spacing: 4) {
+                Image(systemName: isTeacher ? "person.fill" : "graduationcap.fill")
+                    .font(.system(size: 50))
+                    .foregroundStyle(isTeacher ? .blue : .green)
+                Text(auth.userName)
+                    .font(.title3.bold())
+                Text(auth.userEmail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Text(isTeacher ? "Lehrer" : "Schueler")
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(isTeacher ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
+                    .foregroundStyle(isTeacher ? .blue : .green)
+                    .clipShape(Capsule())
             }
 
-            TextField("z.B. HTL-3AHIT", text: $groupName)
-                .textFieldStyle(.roundedBorder)
-                .font(.title3)
-                .padding(.horizontal, 40)
-                .autocorrectionDisabled()
+            Text("Gib deine Gruppe ein")
+                .foregroundStyle(.secondary)
+
+            TextField("z.B. 3AHWII", text: $groupCode)
                 .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled(true)
+                .padding()
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, 40)
 
             Button {
-                navigateToNext = true
+                showNext = true
             } label: {
                 Text("Weiter")
                     .font(.headline)
@@ -67,19 +64,43 @@ struct GroupEntryView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            .disabled(!canContinue)
             .padding(.horizontal, 40)
+            .disabled(!canContinue)
 
             Spacer()
-            Spacer()
         }
-        .navigationTitle(role == .teacher ? "Lehrer" : "Schueler")
-        .navigationDestination(isPresented: $navigateToNext) {
-            let group = groupName.trimmingCharacters(in: .whitespaces)
-            if role == .teacher {
-                TeacherView(group: group)
+        .navigationTitle("Gruppe")
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            // Abmelden (links)
+            ToolbarItem(placement: .topBarLeading) {
+                Button(role: .destructive) {
+                    auth.signOut()
+                    dismiss()
+                } label: {
+                    Text("Abmelden")
+                }
+            }
+            // Demo: Rolle wechseln (rechts)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    auth.setRoleManually(isTeacher ? .student : .teacher)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text(isTeacher ? "Schueler" : "Lehrer")
+                            .font(.subheadline)
+                    }
+                }
+            }
+        }
+        .navigationDestination(isPresented: $showNext) {
+            if isTeacher {
+                TeacherView(group: groupCode)
+                    .environmentObject(auth)
             } else {
-                StudentView(group: group)
+                StudentView(group: groupCode)
+                    .environmentObject(auth)
             }
         }
     }

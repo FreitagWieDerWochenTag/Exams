@@ -1,11 +1,10 @@
-// StudentView.swift
-// Schueler-Ansicht: Laedt Tests vom RPi-Server.
-// "Test starten" laedt das PDF herunter und oeffnet den Viewer.
-
 import SwiftUI
 
 struct StudentView: View {
     let group: String
+
+    @EnvironmentObject var auth: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
 
     @State private var availableTest: String? = nil
     @State private var startedTest = false
@@ -25,12 +24,9 @@ struct StudentView: View {
             }
 
             if isLoading {
-
                 ProgressView("Pruefung wird geladen ...")
                     .padding()
-
             } else if let testName = availableTest {
-
                 VStack(spacing: 16) {
                     HStack(spacing: 12) {
                         Image(systemName: "doc.text.fill")
@@ -65,9 +61,7 @@ struct StudentView: View {
                     }
                 }
                 .padding(.horizontal, 40)
-
             } else {
-
                 VStack(spacing: 12) {
                     Image(systemName: "clock.fill")
                         .font(.system(size: 40))
@@ -85,9 +79,18 @@ struct StudentView: View {
             Spacer()
         }
         .navigationTitle("Schueler")
-        .onAppear {
-            loadAvailableTest()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(role: .destructive) {
+                    auth.signOut()
+                    dismiss()
+                } label: {
+                    Text("Abmelden")
+                }
+            }
         }
+        .onAppear { loadAvailableTest() }
         .navigationDestination(isPresented: $startedTest) {
             if let testName = availableTest {
                 PDFViewerView(pdfName: testName)
@@ -95,26 +98,15 @@ struct StudentView: View {
         }
     }
 
-    // MARK: - Server
-
     private func loadAvailableTest() {
-        RPiService.shared.fetchTests { list in
-            DispatchQueue.main.async {
-                self.availableTest = list.first?.filename
-                self.isLoading = false
-            }
+        // DEMO
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.availableTest = "Mathe"
+            self.isLoading = false
         }
     }
 
     private func startTest() {
-        guard let testName = availableTest else { return }
-
-        RPiService.shared.downloadTest(filename: testName) { url in
-            DispatchQueue.main.async {
-                if url != nil {
-                    startedTest = true
-                }
-            }
-        }
+        startedTest = true
     }
 }

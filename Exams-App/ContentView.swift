@@ -1,17 +1,13 @@
 // ContentView.swift
 // 1. Microsoft Login
-// 2. Rolle waehlen (Lehrer / Schueler)
-// 3. Weiter zur GroupEntryView
+// 2. Wenn Rolle bekannt -> automatisch zur GroupEntryView
+// 3. Wenn Rolle unbekannt und fertig geladen -> manuelle Auswahl
 
 import SwiftUI
 
-enum UserRole {
-    case teacher
-    case student
-}
-
 struct ContentView: View {
     @EnvironmentObject var auth: AuthViewModel
+    @State private var goToGroup = false
 
     var body: some View {
         NavigationStack {
@@ -29,39 +25,53 @@ struct ContentView: View {
                 }
 
                 if !auth.isSignedIn {
-                    // --- Noch nicht eingeloggt ---
-                    Text("Melde dich mit deinem Schulkonto an.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    // --- Nicht eingeloggt ---
+                    if auth.isBusy {
+                        ProgressView("Anmeldung wird geprueft ...")
+                    } else {
+                        Text("Melde dich mit deinem Schulkonto an.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
 
-                    Button {
-                        Task { await auth.signIn() }
-                    } label: {
-                        HStack {
-                            Image(systemName: "person.badge.key.fill")
-                            Text("Mit Microsoft anmelden")
+                        // Microsoft-Style Login Button
+                        Button {
+                            Task { await auth.signIn() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "globe")
+                                    .font(.title3)
+                                Text("Mit Microsoft anmelden")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.white)
+                            .foregroundStyle(.black)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 40)
                     }
-                    .padding(.horizontal, 40)
 
-                } else {
-                    // --- Eingeloggt: Rolle waehlen ---
+                } else if auth.isBusy {
+                    // --- Eingeloggt, Rolle wird geladen ---
+                    ProgressView("Rolle wird erkannt ...")
+
+                } else if auth.role == .unknown {
+                    // --- Rolle konnte nicht erkannt werden ---
                     Text("Waehle deine Rolle")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
                     VStack(spacing: 16) {
-                        NavigationLink(destination: GroupEntryView(role: .teacher)) {
+                        Button { auth.setRoleManually(.teacher) } label: {
                             RoleButton(title: "Lehrer", icon: "person.fill", color: .blue)
                         }
-
-                        NavigationLink(destination: GroupEntryView(role: .student)) {
+                        Button { auth.setRoleManually(.student) } label: {
                             RoleButton(title: "Schueler", icon: "graduationcap.fill", color: .green)
                         }
                     }
@@ -78,36 +88,24 @@ struct ContentView: View {
                 Spacer()
                 Spacer()
             }
-            .navigationBarHidden(true)
+            .navigationBarBackButtonHidden(true)
             .onAppear {
                 auth.configure()
             }
+            .onChange(of: auth.role) { _, newRole in
+                if auth.isSignedIn && newRole != .unknown {
+                    goToGroup = true
+                }
+            }
+            .onChange(of: auth.isSignedIn) { _, signedIn in
+                if signedIn && auth.role != .unknown {
+                    goToGroup = true
+                }
+            }
+            .navigationDestination(isPresented: $goToGroup) {
+                GroupEntryView()
+                    .environmentObject(auth)
+            }
         }
-    }
-}
-
-// MARK: - Wiederverwendbarer Button
-
-struct RoleButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.title2)
-            Text(title)
-                .font(.title3.bold())
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.body)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(color.opacity(0.1))
-        .foregroundStyle(color)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }

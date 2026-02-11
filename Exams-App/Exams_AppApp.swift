@@ -1,7 +1,3 @@
-// Exams_AppApp.swift
-// Einstiegspunkt der App.
-// Erstellt das AuthViewModel und gibt es als EnvironmentObject an alle Views.
-
 import SwiftUI
 
 @main
