@@ -97,15 +97,14 @@ struct FachSelectionView: View {
         .navigationTitle("Fach")
         .navigationBarBackButtonHidden(true)
         .toolbar {
-            // Zurück (links)
+            // Abmelden (links) - komplett ausloggen
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
+                Button(role: .destructive) {
+                    auth.signOut()
+                    // Keine dismiss() - signOut setzt isSignedIn = false
+                    // ContentView navigiert automatisch zurück
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Zurück")
-                    }
+                    Text("Abmelden")
                 }
             }
         }

@@ -46,7 +46,10 @@ struct SubmissionsListView: View {
                     }
                 }
                 .padding()
-                .background(Color(.systemGroupedBackground))
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+                .padding(.vertical, 8)
             }
             
             // Abgaben Liste

@@ -114,14 +114,6 @@ struct TeacherView: View {
                     }
                 }
             }
-            
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    auth.signOut()
-                } label: {
-                    Text("Abmelden")
-                }
-            }
         }
         .fileImporter(
             isPresented: $showFilePicker,

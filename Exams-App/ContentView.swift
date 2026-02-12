@@ -17,9 +17,18 @@ struct ContentView: View {
 
                 // App-Titel
                 VStack(spacing: 8) {
-                    Image(systemName: "doc.text.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.blue)
+                    // Logo hinzufügen (falls vorhanden in Assets)
+                    // Wenn kein Logo vorhanden, zeige Icon
+                    if let _ = UIImage(named: "AppLogo") {
+                        Image("AppLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 100, height: 100)
+                    } else {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.blue)
+                    }
                     Text("Exams")
                         .font(.largeTitle.bold())
                 }

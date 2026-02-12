@@ -85,7 +85,7 @@ struct StudentView: View {
         }
         .navigationTitle("Schüler")
         .toolbar {
-            // Zurück-Button (links)
+            // Zurück-Button
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     dismiss()
@@ -94,15 +94,6 @@ struct StudentView: View {
                         Image(systemName: "chevron.left")
                         Text("Zurück")
                     }
-                }
-            }
-            
-            // Abmelden-Button (rechts)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    auth.signOut()
-                } label: {
-                    Text("Abmelden")
                 }
             }
         }

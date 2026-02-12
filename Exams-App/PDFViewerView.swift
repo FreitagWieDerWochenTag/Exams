@@ -31,7 +31,7 @@ struct PDFViewerView: View {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let nestedFileURL = buildFileURL(docs: docs)
 
-        PDFViewRepresentable(pdfName: pdfName, fileURL: nestedFileURL, containerRef: $containerView)
+        PDFViewRepresentable(pdfName: pdfName, fileURL: nestedFileURL, containerRef: $containerView, isTeacherView: isTeacherView)
             .navigationTitle(pdfName)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)
@@ -89,7 +89,9 @@ struct PDFViewerView: View {
                 Button("Ja, abgeben", role: .destructive) {
                     submitAndClose()
                 }
-                Button("Abbrechen", role: .cancel) {}
+                Button("Abbrechen", role: .cancel) {
+                    // Dialog schließen ohne Aktion
+                }
             } message: {
                 Text("Der Test ist danach nicht mehr bearbeitbar.")
             }
@@ -146,6 +148,8 @@ struct PDFViewerView: View {
 
         // Name formatieren: "Max Mustermann" -> "Mustermann_Max.pdf"
         let studentFilename = formatStudentFilename(studentName)
+        print("=== Submit: Original Name: '\(studentName)' ===")
+        print("=== Submit: Formatted Filename: '\(studentFilename)' ===")
         print("=== Submit: Klasse=\(klasse), Fach=\(fach), Test=\(pdfName) ===")
         print("=== Submit: Student File=\(studentFilename), Size=\(data.count) bytes ===")
 
@@ -161,6 +165,9 @@ struct PDFViewerView: View {
             if success {
                 // Markiere Test als abgegeben
                 UserDefaults.standard.set(true, forKey: "submitted_\(klasse)_\(fach)_\(pdfName)")
+                
+                // Lösche die gespeicherten Zeichnungen (nicht mehr nötig nach Submit)
+                PDFStorage.delete(for: pdfName, klasse: klasse, fach: fach)
             }
             
             submitSuccess = success
@@ -173,31 +180,46 @@ struct PDFViewerView: View {
         containerView?.addBlankPage(type: type)
     }
 
-    /// "Max Mustermann" -> "Mustermann_Max.pdf"
-    /// "Mustermann, Max" -> "Mustermann_Max.pdf"
+    /// "Max Mustermann" -> "Max_Mustermann.pdf"
+    /// "Mustermann, Max" -> "Max_Mustermann.pdf"
     private func formatStudentFilename(_ name: String) -> String {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return "Unbekannt.pdf" }
 
-        let parts: [String]
+        var vorname = ""
+        var nachname = ""
+        
         if cleaned.contains(",") {
             // "Mustermann, Max" -> ["Mustermann", "Max"]
-            parts = cleaned.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let parts = cleaned.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count >= 2 {
+                nachname = parts[0]
+                vorname = parts[1]
+            } else if parts.count == 1 {
+                nachname = parts[0]
+            }
         } else {
-            // "Max Mustermann" -> ["Mustermann", "Max"]
+            // "Max Mustermann" -> Vorname ist erstes Wort(e), Nachname ist letztes
             let words = cleaned.split(separator: " ").map(String.init)
             if words.count >= 2 {
-                let vorname = words.dropLast().joined(separator: " ")
-                let nachname = words.last!
-                parts = [nachname, vorname]
-            } else {
-                parts = words
+                vorname = words.dropLast().joined(separator: " ")
+                nachname = words.last!
+            } else if words.count == 1 {
+                vorname = words[0]
             }
         }
-
-        let filename = parts.joined(separator: "_")
-            .replacingOccurrences(of: " ", with: "_")
-        return filename + ".pdf"
+        
+        // Entferne Leerzeichen und erstelle Filename: Vorname_Nachname.pdf
+        let vornameClean = vorname.replacingOccurrences(of: " ", with: "_")
+        let nachnameClean = nachname.replacingOccurrences(of: " ", with: "_")
+        
+        if !vornameClean.isEmpty && !nachnameClean.isEmpty {
+            return "\(vornameClean)_\(nachnameClean).pdf"
+        } else if !vornameClean.isEmpty {
+            return "\(vornameClean).pdf"
+        } else {
+            return "\(nachnameClean).pdf"
+        }
     }
 }
 
@@ -207,12 +229,42 @@ struct PDFViewRepresentable: UIViewRepresentable {
     let pdfName: String
     let fileURL: URL?
     @Binding var containerRef: PDFContainerView?
+    let isTeacherView: Bool
 
     func makeUIView(context: Context) -> PDFContainerView {
-        let v = PDFContainerView(pdfName: pdfName, fileURL: fileURL, coordinator: context.coordinator)
+        let v = PDFContainerView(pdfName: pdfName, fileURL: fileURL, coordinator: context.coordinator, isTeacherView: isTeacherView)
         context.coordinator.containerView = v
+        context.coordinator.pdfName = pdfName
+        context.coordinator.klasse = extractKlasseFromPath(fileURL: fileURL)
+        context.coordinator.fach = extractFachFromPath(fileURL: fileURL)
         DispatchQueue.main.async { containerRef = v }
         return v
+    }
+    
+    // Extrahiere Klasse aus dem Dateipfad
+    private func extractKlasseFromPath(fileURL: URL?) -> String {
+        guard let fileURL = fileURL else { return "" }
+        let components = fileURL.pathComponents
+        // Pfad: .../Exams/{Klasse}/{Fach}/...
+        if let examsIndex = components.firstIndex(of: "Exams"),
+           examsIndex + 1 < components.count {
+            return components[examsIndex + 1]
+        }
+        return ""
+    }
+    
+    // Extrahiere Fach aus dem Dateipfad
+    private func extractFachFromPath(fileURL: URL?) -> String {
+        guard let fileURL = fileURL else { return "" }
+        let components = fileURL.pathComponents
+        // Pfad: .../Exams/{Klasse}/{Fach}/...
+        if let examsIndex = components.firstIndex(of: "Exams"),
+           examsIndex + 2 < components.count {
+            let fachComponent = components[examsIndex + 2]
+            // Entferne "Submissions" falls vorhanden (Lehrer-View)
+            return fachComponent == "Submissions" ? "" : fachComponent
+        }
+        return ""
     }
 
     func updateUIView(_ uiView: PDFContainerView, context: Context) {}
@@ -226,10 +278,18 @@ struct PDFViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject {
         weak var containerView: PDFContainerView?
         var pdfName: String = ""
+        var klasse: String = ""
+        var fach: String = ""
 
         func saveDrawing() {
             guard let container = containerView else { return }
-            PDFStorage.save(drawing: container.canvasView.drawing, for: pdfName)
+            // Nur speichern wenn nicht im Lehrer-Modus
+            if !container.isTeacherView {
+                PDFStorage.save(drawing: container.canvasView.drawing,
+                               for: pdfName,
+                               klasse: klasse,
+                               fach: fach)
+            }
         }
     }
 }
@@ -247,18 +307,25 @@ final class PDFContainerView: UIView {
     private var scaleObs: NSObjectProtocol?
 
     private var fileURL: URL?
+    let isTeacherView: Bool
 
-    init(pdfName: String, fileURL: URL?, coordinator: PDFViewRepresentable.Coordinator) {
+    init(pdfName: String, fileURL: URL?, coordinator: PDFViewRepresentable.Coordinator, isTeacherView: Bool) {
         self.pdfName = pdfName
         self.fileURL = fileURL
         self.coordinator = coordinator
+        self.isTeacherView = isTeacherView
         super.init(frame: .zero)
 
         coordinator.pdfName = pdfName
 
         setupPDFView()
-        setupCanvasView()
-        loadSavedDrawing()
+        
+        // Canvas nur für Schüler aktivieren
+        if !isTeacherView {
+            setupCanvasView()
+            loadSavedDrawing()
+        }
+        
         observeScale()
     }
 
@@ -271,7 +338,13 @@ final class PDFContainerView: UIView {
         pdfView.displayMode = .singlePageContinuous
         pdfView.displayDirection = .vertical
         pdfView.autoScales = true
-        pdfView.backgroundColor = .systemGray6
+        
+        // Für Lehrer: Klarer Hintergrund damit PDF sichtbar ist
+        if isTeacherView {
+            pdfView.backgroundColor = .white
+        } else {
+            pdfView.backgroundColor = .systemGray6
+        }
 
         let fileURLToLoad: URL
         if let fileURL = fileURL {
@@ -282,11 +355,40 @@ final class PDFContainerView: UIView {
         }
         self.fileURL = fileURLToLoad
 
-        if let doc = PDFDocument(url: fileURLToLoad) {
-            pdfView.document = doc
-            print("=== PDF geladen: \(fileURLToLoad.path) ===")
+        print("=== setupPDFView: isTeacherView = \(isTeacherView) ===")
+        print("=== setupPDFView: Trying to load: \(fileURLToLoad.path) ===")
+        
+        // Prüfe ob Datei existiert
+        if FileManager.default.fileExists(atPath: fileURLToLoad.path) {
+            print("=== setupPDFView: Datei existiert ===")
+            
+            if let doc = PDFDocument(url: fileURLToLoad) {
+                let pageCount = doc.pageCount
+                print("=== setupPDFView: PDF geladen mit \(pageCount) Seiten ===")
+                
+                // Teste erste Seite
+                if let firstPage = doc.page(at: 0) {
+                    let bounds = firstPage.bounds(for: .mediaBox)
+                    print("=== setupPDFView: Erste Seite Größe: \(bounds.size) ===")
+                }
+                
+                pdfView.document = doc
+                
+                // Wichtig: PDF neu rendern und anzeigen
+                pdfView.goToFirstPage(nil)
+                pdfView.setNeedsDisplay()
+                pdfView.layoutDocumentView()
+                
+                // Force Layout nach kurzer Verzögerung
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.pdfView.scaleFactor = self.pdfView.scaleFactorForSizeToFit
+                    self.pdfView.setNeedsDisplay()
+                }
+            } else {
+                print("=== setupPDFView: PDF konnte nicht als PDFDocument geladen werden ===")
+            }
         } else {
-            print("=== PDF nicht gefunden: \(fileURLToLoad.path) ===")
+            print("=== setupPDFView: FEHLER - Datei existiert nicht! ===")
         }
 
         addSubview(pdfView)
@@ -312,20 +414,27 @@ final class PDFContainerView: UIView {
         super.didMoveToWindow()
         guard let window else { return }
 
-        attachCanvas()
+        // Canvas nur für Schüler
+        if !isTeacherView {
+            attachCanvas()
 
-        if toolPicker == nil {
-            toolPicker = PKToolPicker.shared(for: window)
+            if toolPicker == nil {
+                toolPicker = PKToolPicker.shared(for: window)
+            }
+            showToolPicker()
         }
-        showToolPicker()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        attachCanvas()
+        
+        // Canvas nur für Schüler
+        if !isTeacherView {
+            attachCanvas()
 
-        if window != nil {
-            showToolPicker()
+            if window != nil {
+                showToolPicker()
+            }
         }
     }
 
@@ -366,55 +475,92 @@ final class PDFContainerView: UIView {
     // MARK: Speichern & Laden
 
     private func loadSavedDrawing() {
-        if let saved = PDFStorage.load(for: pdfName) {
+        // Extrahiere klasse/fach aus fileURL
+        guard let fileURL = fileURL else { return }
+        let components = fileURL.pathComponents
+        
+        var klasse = ""
+        var fach = ""
+        
+        if let examsIndex = components.firstIndex(of: "Exams") {
+            if examsIndex + 1 < components.count {
+                klasse = components[examsIndex + 1]
+            }
+            if examsIndex + 2 < components.count {
+                let fachComponent = components[examsIndex + 2]
+                fach = fachComponent == "Submissions" ? "" : fachComponent
+            }
+        }
+        
+        if let saved = PDFStorage.load(for: pdfName, klasse: klasse, fach: fach) {
             canvasView.drawing = saved
         }
     }
     
     func saveDrawingToPDF() {
-        // Zeichnung in die PDF einbrennen
-        guard let document = pdfView.document else { return }
+        guard let document = pdfView.document else {
+            print("=== saveDrawingToPDF: Kein Dokument ===")
+            return
+        }
         
         let pageCount = document.pageCount
-        guard pageCount > 0 else { return }
+        guard pageCount > 0 else {
+            print("=== saveDrawingToPDF: Keine Seiten ===")
+            return
+        }
         
-        // Für jede Seite die Zeichnung hinzufügen
-        for i in 0..<pageCount {
-            guard let page = document.page(at: i) else { continue }
-            let pageRect = page.bounds(for: .mediaBox)
-            
-            // Zeichnung für diese Seite extrahieren
-            let sliceY = CGFloat(i) * pageRect.height
-            let sliceRect = CGRect(x: 0, y: sliceY, width: pageRect.width, height: pageRect.height)
-            let drawingImage = canvasView.drawing.image(from: sliceRect, scale: UIScreen.main.scale)
-            
-            // Neue Seite mit Zeichnung erstellen
-            let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-            let imageWithDrawing = renderer.image { context in
-                // Erst das PDF
-                context.cgContext.saveGState()
-                context.cgContext.translateBy(x: 0, y: pageRect.height)
-                context.cgContext.scaleBy(x: 1, y: -1)
-                if let cgPage = page.pageRef {
-                    context.cgContext.drawPDFPage(cgPage)
-                }
-                context.cgContext.restoreGState()
+        print("=== saveDrawingToPDF: Start mit \(pageCount) Seiten ===")
+        
+        // Erste Seite für Größe
+        guard let firstPage = document.page(at: 0) else { return }
+        let pageRect = firstPage.bounds(for: .mediaBox)
+        
+        // Erstelle neues PDF mit Zeichnungen
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        let pdfData = renderer.pdfData { context in
+            for i in 0..<pageCount {
+                guard let page = document.page(at: i) else { continue }
                 
-                // Dann die Zeichnung
+                // Neue Seite beginnen
+                context.beginPage()
+                
+                let ctx = context.cgContext
+                
+                // 1. Zeichne das Original-PDF
+                ctx.saveGState()
+                ctx.translateBy(x: 0, y: pageRect.height)
+                ctx.scaleBy(x: 1, y: -1)
+                if let cgPage = page.pageRef {
+                    ctx.drawPDFPage(cgPage)
+                }
+                ctx.restoreGState()
+                
+                // 2. Zeichne die Canvas-Zeichnung für diese Seite
+                let sliceY = CGFloat(i) * pageRect.height
+                let sliceRect = CGRect(x: 0, y: sliceY,
+                                      width: pageRect.width,
+                                      height: pageRect.height)
+                
+                // WICHTIG: scale sollte UIScreen.main.scale sein
+                let drawingImage = canvasView.drawing.image(from: sliceRect, scale: UIScreen.main.scale)
                 drawingImage.draw(in: pageRect)
-            }
-            
-            // Konvertiere zu PDF-Seite
-            if let pdfPage = PDFPage(image: imageWithDrawing) {
-                document.removePage(at: i)
-                document.insert(pdfPage, at: i)
             }
         }
         
-        // Speichere das aktualisierte PDF
-        if let fileURL = fileURL, let data = document.dataRepresentation() {
-            try? data.write(to: fileURL)
-            print("=== PDF mit Zeichnungen gespeichert ===")
+        // Speichere das neue PDF
+        if let fileURL = fileURL {
+            do {
+                try pdfData.write(to: fileURL)
+                print("=== saveDrawingToPDF: Erfolgreich gespeichert - \(pdfData.count) bytes ===")
+                
+                // Lade das aktualisierte PDF neu
+                if let newDoc = PDFDocument(url: fileURL) {
+                    pdfView.document = newDoc
+                    print("=== saveDrawingToPDF: PDF neu geladen ===")
+                }
+            } catch {
+                print("=== saveDrawingToPDF: Fehler beim Speichern: \(error) ===")
+            }
         }
     }
 
@@ -457,7 +603,7 @@ final class PDFContainerView: UIView {
                 let gridSpacing: CGFloat = 20 // Größe der Kästchen
                 let startX: CGFloat = 50
                 let startY: CGFloat = 50
-                let endX: CGFloat = a4Size.width - 50
+                let endX: CGFloat = a4Size.width - 70 // Mehr Margin rechts
                 let endY: CGFloat = a4Size.height - 50
                 let gridColor = UIColor.lightGray
                 
@@ -505,6 +651,11 @@ final class PDFContainerView: UIView {
             do {
                 try data.write(to: fileURL)
                 print("=== PDF mit neuer Seite gespeichert: \(fileURL.path) ===")
+                
+                // WICHTIG: Canvas neu attachieren damit er über allen Seiten liegt
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.attachCanvas()
+                }
             } catch {
                 print("=== Fehler beim Speichern der PDF: \(error) ===")
             }
@@ -513,7 +664,9 @@ final class PDFContainerView: UIView {
 
     deinit {
         if let scaleObs { NotificationCenter.default.removeObserver(scaleObs) }
-        if let toolPicker { toolPicker.removeObserver(canvasView) }
-        coordinator?.saveDrawing()
+        if !isTeacherView {
+            if let toolPicker { toolPicker.removeObserver(canvasView) }
+            coordinator?.saveDrawing()
+        }
     }
 }

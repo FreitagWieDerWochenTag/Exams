@@ -193,6 +193,7 @@ final class AuthViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: roleKey)
         UserDefaults.standard.removeObject(forKey: nameKey)
         UserDefaults.standard.removeObject(forKey: emailKey)
+        UserDefaults.standard.removeObject(forKey: "studentKlasse") // Auch gespeicherte Klasse löschen
     }
 
     // MARK: - Graph API
