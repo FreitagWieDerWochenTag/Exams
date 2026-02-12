@@ -131,7 +131,9 @@ class RPiService {
                     pdfData: Data,
                     completion: @escaping (Bool) -> Void) {
 
-        let url = URL(string: APIConfig.baseURL + "/api/student/submit")!
+        let encodedGroup = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
+        let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedGroup)/\(encodedFile)/submit")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")

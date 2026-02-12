@@ -48,6 +48,11 @@ struct GroupEntryView: View {
             TextField("z.B. 4AHITS", text: $groupCode)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled(true)
+                .keyboardType(.asciiCapable)
+                .submitLabel(.done)
+                .onSubmit {
+                    if canContinue { showNext = true }
+                }
                 .padding()
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
