@@ -84,9 +84,9 @@ struct TeacherClassFachEntryView: View {
             Spacer()
         }
         .navigationTitle("Klasse & Fach")
-        .navigationBarBackButtonHidden(true)
+        
         .toolbar {
-            // Abmelden (links)
+            // Lehrer: Abmelden links
             ToolbarItem(placement: .topBarLeading) {
                 Button(role: .destructive) {
                     auth.signOut()
@@ -96,9 +96,11 @@ struct TeacherClassFachEntryView: View {
                 }
             }
         }
+         
         .navigationDestination(isPresented: $showNext) {
             TeacherView(klasse: klasse, fach: fach)
                 .environmentObject(auth)
         }
     }
 }
+
