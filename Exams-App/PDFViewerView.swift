@@ -2,6 +2,8 @@ import SwiftUI
 import PDFKit
 import PencilKit
 
+// MARK: - SwiftUI View
+
 struct PDFViewerView: View {
     let group: String
     let pdfName: String
@@ -30,6 +32,7 @@ struct PDFViewerView: View {
                             Text("Test beenden")
                         }
                     }
+                    .disabled(isSubmitting)
                 }
             }
 
@@ -60,11 +63,7 @@ struct PDFViewerView: View {
     }
 
     private func submitAndClose() {
-
         isSubmitting = true
-
-        // Zeichnung wird automatisch beim Dismiss gespeichert
-        containerView?.canvasView.drawing = containerView?.canvasView.drawing ?? PKDrawing()
 
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let fileURL = docs.appendingPathComponent(pdfName)
@@ -85,6 +84,8 @@ struct PDFViewerView: View {
         }
     }
 }
+
+// MARK: - Bruecke: SwiftUI <-> UIKit
 
 struct PDFViewRepresentable: UIViewRepresentable {
     let pdfName: String
@@ -116,6 +117,8 @@ struct PDFViewRepresentable: UIViewRepresentable {
     }
 }
 
+// MARK: - UIKit Container
+
 final class PDFContainerView: UIView {
     let pdfView = PDFView()
     let canvasView = PKCanvasView()
@@ -141,6 +144,8 @@ final class PDFContainerView: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // MARK: PDF einrichten
+
     private func setupPDFView() {
         pdfView.translatesAutoresizingMaskIntoConstraints = false
         pdfView.displayMode = .singlePageContinuous
@@ -148,11 +153,15 @@ final class PDFContainerView: UIView {
         pdfView.autoScales = true
         pdfView.backgroundColor = .systemGray6
 
+        // PDF aus Documents-Ordner laden (heruntergeladen vom Server)
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let fileURL = docs.appendingPathComponent(pdfName)
 
         if let doc = PDFDocument(url: fileURL) {
             pdfView.document = doc
+            print("=== PDF geladen: \(fileURL.path) ===")
+        } else {
+            print("=== PDF nicht gefunden: \(fileURL.path) ===")
         }
 
         addSubview(pdfView)
@@ -164,11 +173,15 @@ final class PDFContainerView: UIView {
         ])
     }
 
+    // MARK: Canvas einrichten
+
     private func setupCanvasView() {
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
         canvasView.drawingPolicy = .pencilOnly
     }
+
+    // MARK: View-Lifecycle
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -213,6 +226,8 @@ final class PDFContainerView: UIView {
         }
     }
 
+    // MARK: Zoom-Beobachter
+
     private func observeScale() {
         scaleObs = NotificationCenter.default.addObserver(
             forName: .PDFViewScaleChanged,
@@ -222,6 +237,8 @@ final class PDFContainerView: UIView {
             self?.attachCanvas()
         }
     }
+
+    // MARK: Speichern & Laden
 
     private func loadSavedDrawing() {
         if let saved = PDFStorage.load(for: pdfName) {

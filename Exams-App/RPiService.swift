@@ -21,7 +21,8 @@ class RPiService {
 
     // Liste der Tests holen
     func fetchTests(group: String, completion: @escaping ([TestFile]) -> Void) {
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)")!
+        let encoded = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encoded)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
@@ -37,16 +38,29 @@ class RPiService {
         }.resume()
     }
 
-
     // PDF laden
     func downloadTest(group: String, filename: String, completion: @escaping (URL?) -> Void) {
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)/\(filename)")!
+        let encodedGroup = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
+        let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedGroup)/\(encodedFile)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
-        URLSession.shared.downloadTask(with: request) { tempURL, _, _ in
+        print("=== Download URL: \(url.absoluteString) ===")
+
+        URLSession.shared.downloadTask(with: request) { tempURL, response, error in
+            if let error {
+                print("=== Download Error: \(error) ===")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("=== Download Status: \(status) ===")
+
             guard let tempURL else {
-                completion(nil)
+                print("=== Download: tempURL is nil ===")
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
 
@@ -54,13 +68,22 @@ class RPiService {
             let dest = docs.appendingPathComponent(filename)
 
             try? FileManager.default.removeItem(at: dest)
-            try? FileManager.default.copyItem(at: tempURL, to: dest)
 
-            completion(dest)
+            do {
+                try FileManager.default.copyItem(at: tempURL, to: dest)
+                print("=== PDF gespeichert: \(dest.path) ===")
+
+                // Pruefen ob die Datei gueltig ist
+                let fileSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
+                print("=== PDF Groesse: \(fileSize) bytes ===")
+
+                DispatchQueue.main.async { completion(dest) }
+            } catch {
+                print("=== Copy Error: \(error) ===")
+                DispatchQueue.main.async { completion(nil) }
+            }
         }.resume()
     }
-
-
 
     // PDF hochladen (Lehrer -> RPi)
     func uploadTest(group: String,
@@ -78,12 +101,12 @@ class RPiService {
 
         var body = Data()
 
-        // ✅ GROUP FIELD (NEU!)
+        // GROUP FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"group\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(group)\r\n".data(using: .utf8)!)
 
-        // ✅ PDF FIELD
+        // PDF FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
@@ -101,27 +124,36 @@ class RPiService {
             }
         }.resume()
     }
-    
+
+    // Schueler-Abgabe hochladen
     func submitTest(group: String,
                     filename: String,
                     pdfData: Data,
                     completion: @escaping (Bool) -> Void) {
 
-        let boundary = UUID().uuidString
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(group)/\(filename)/submit")!
-
+        let url = URL(string: APIConfig.baseURL + "/api/student/submit")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
+
+        let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
 
+        // GROUP FIELD
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"group\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(group)\r\n".data(using: .utf8)!)
+
+        // PDF FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
         body.append(pdfData)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         request.httpBody = body
 
@@ -132,7 +164,4 @@ class RPiService {
             }
         }.resume()
     }
-
-
-     
 }

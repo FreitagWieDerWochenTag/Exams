@@ -80,7 +80,17 @@ struct StudentView: View {
         }
         .navigationTitle("Schueler")
         .toolbar {
-            
+            // Zurueck-Button (nicht Abmelden)
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Zurueck")
+                    }
+                }
+            }
         }
         .onAppear { loadAvailableTest() }
         .navigationDestination(isPresented: $startedTest) {
