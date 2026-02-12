@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct StudentView: View {
-    let group: String
+    let klasse: String
+    let fach: String
 
     @EnvironmentObject var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
@@ -9,6 +10,7 @@ struct StudentView: View {
     @State private var availableTest: String? = nil
     @State private var startedTest = false
     @State private var isLoading = true
+    @State private var refreshTimer: Timer?
 
     var body: some View {
         VStack(spacing: 32) {
@@ -19,12 +21,15 @@ struct StudentView: View {
                 Image(systemName: "graduationcap.fill")
                     .font(.system(size: 50))
                     .foregroundStyle(.green)
-                Text("Gruppe: \(group)")
+                Text("Klasse: \(klasse)")
                     .font(.title2.bold())
+                Text("Fach: \(fach)")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
             }
 
             if isLoading {
-                ProgressView("Pruefung wird geladen ...")
+                ProgressView("Prüfung wird geladen ...")
                     .padding()
             } else if let testName = availableTest {
                 VStack(spacing: 16) {
@@ -66,7 +71,7 @@ struct StudentView: View {
                     Image(systemName: "clock.fill")
                         .font(.system(size: 40))
                         .foregroundStyle(.secondary)
-                    Text("Kein Test verfuegbar")
+                    Text("Kein Test verfügbar")
                         .font(.headline)
                         .foregroundStyle(.secondary)
                     Text("Warte auf deinen Lehrer.")
@@ -78,32 +83,57 @@ struct StudentView: View {
             Spacer()
             Spacer()
         }
-        .navigationTitle("Schueler")
+        .navigationTitle("Schüler")
         .toolbar {
-            // Zurueck-Button (nicht Abmelden)
+            // Zurück-Button (links)
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     dismiss()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                        Text("Zurueck")
+                        Text("Zurück")
                     }
                 }
             }
+            
+            // Abmelden-Button (rechts)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    auth.signOut()
+                } label: {
+                    Text("Abmelden")
+                }
+            }
         }
-        .onAppear { loadAvailableTest() }
+        .onAppear {
+            loadAvailableTest()
+            // Alle 5 Sekunden nach neuen Tests suchen
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+                loadAvailableTest()
+            }
+        }
+        .onDisappear {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
         .navigationDestination(isPresented: $startedTest) {
             if let testName = availableTest {
-                PDFViewerView(group: group, pdfName: testName)
+                PDFViewerView(klasse: klasse, fach: fach, pdfName: testName, studentName: auth.userName)
             }
         }
     }
 
     private func loadAvailableTest() {
-        RPiService.shared.fetchTests(group: group) { list in
+        RPiService.shared.fetchTests(klasse: klasse, fach: fach) { list in
             DispatchQueue.main.async {
-                self.availableTest = list.first?.filename
+                // Filter: Zeige nur Tests die noch nicht abgegeben wurden
+                let unsubmittedTests = list.filter { test in
+                    let key = "submitted_\(self.klasse)_\(self.fach)_\(test.filename)"
+                    return !UserDefaults.standard.bool(forKey: key)
+                }
+                
+                self.availableTest = unsubmittedTests.first?.filename
                 self.isLoading = false
             }
         }
@@ -112,7 +142,7 @@ struct StudentView: View {
     private func startTest() {
         guard let testName = availableTest else { return }
 
-        RPiService.shared.downloadTest(group: group, filename: testName) { url in
+        RPiService.shared.downloadTest(klasse: klasse, fach: fach, filename: testName) { url in
             DispatchQueue.main.async {
                 if url != nil {
                     startedTest = true

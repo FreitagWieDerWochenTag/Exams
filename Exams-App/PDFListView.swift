@@ -31,7 +31,7 @@ struct PDFListView: View {
     }
 
     private func loadList() {
-        RPiService.shared.fetchTests(group: "default") { list in
+        RPiService.shared.fetchTests(klasse: "default", fach: "default") { list in
             DispatchQueue.main.async {
                 pdfs = list
                 isLoading = false
@@ -40,7 +40,7 @@ struct PDFListView: View {
     }
 
     private func loadPDF(_ filename: String) {
-        RPiService.shared.downloadTest(group: "default", filename: filename) { url in
+        RPiService.shared.downloadTest(klasse: "default", fach: "default", filename: filename) { url in
             DispatchQueue.main.async {
                 if url != nil {
                     selectedPDF = filename

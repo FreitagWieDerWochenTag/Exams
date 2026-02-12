@@ -19,10 +19,14 @@ class RPiService {
         }.resume()
     }
 
+    // MARK: - Student APIs
+    
     // Liste der Tests holen
-    func fetchTests(group: String, completion: @escaping ([TestFile]) -> Void) {
-        let encoded = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encoded)")!
+    // GET /api/student/tests/{klasse}/{fach}
+    func fetchTests(klasse: String, fach: String, completion: @escaping ([TestFile]) -> Void) {
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let encodedFach = fach.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fach
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedKlasse)/\(encodedFach)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
@@ -39,10 +43,12 @@ class RPiService {
     }
 
     // PDF laden
-    func downloadTest(group: String, filename: String, completion: @escaping (URL?) -> Void) {
-        let encodedGroup = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
+    // GET /api/student/tests/{klasse}/{fach}/{filename}
+    func downloadTest(klasse: String, fach: String, filename: String, completion: @escaping (URL?) -> Void) {
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let encodedFach = fach.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fach
         let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedGroup)/\(encodedFile)")!
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedKlasse)/\(encodedFach)/\(encodedFile)")!
         var request = URLRequest(url: url)
         request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
 
@@ -65,7 +71,11 @@ class RPiService {
             }
 
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let dest = docs.appendingPathComponent(filename)
+            let examsRoot = docs.appendingPathComponent("Exams", isDirectory: true)
+            let klasseDir = examsRoot.appendingPathComponent(klasse, isDirectory: true)
+            let fachDir = klasseDir.appendingPathComponent(fach, isDirectory: true)
+            try? FileManager.default.createDirectory(at: fachDir, withIntermediateDirectories: true)
+            let dest = fachDir.appendingPathComponent(filename)
 
             try? FileManager.default.removeItem(at: dest)
 
@@ -73,9 +83,9 @@ class RPiService {
                 try FileManager.default.copyItem(at: tempURL, to: dest)
                 print("=== PDF gespeichert: \(dest.path) ===")
 
-                // Pruefen ob die Datei gueltig ist
+                // Prüfen ob die Datei gültig ist
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
-                print("=== PDF Groesse: \(fileSize) bytes ===")
+                print("=== PDF Größe: \(fileSize) bytes ===")
 
                 DispatchQueue.main.async { completion(dest) }
             } catch {
@@ -85,13 +95,88 @@ class RPiService {
         }.resume()
     }
 
+    // Schüler-Abgabe hochladen
+    // POST /api/student/tests/{klasse}/{fach}/{filename}/submit
+    // Backend fügt automatisch "SUBMISSION_" Präfix hinzu
+    func submitTest(klasse: String,
+                    fach: String,
+                    filename: String,
+                    studentFilename: String,
+                    pdfData: Data,
+                    completion: @escaping (Bool) -> Void) {
+
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let encodedFach = fach.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fach
+        let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+
+        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedKlasse)/\(encodedFach)/\(encodedFile)/submit")!
+        
+        print("=== SUBMIT URL: \(url.absoluteString) ===")
+        print("=== SUBMIT Test-Filename (URL): \(filename) ===")
+        print("=== SUBMIT Student-Filename (will be saved with SUBMISSION_ prefix): \(studentFilename) ===")
+        print("=== SUBMIT Data Size: \(pdfData.count) bytes ===")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        // PDF FIELD - Backend speichert als "SUBMISSION_{filename}"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(studentFilename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
+        body.append(pdfData)
+        body.append("\r\n".data(using: .utf8)!)
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+        
+        print("=== SUBMIT Body Size: \(body.count) bytes ===")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("=== SUBMIT Error: \(error.localizedDescription) ===")
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
+            }
+            
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("=== SUBMIT Status: \(status) ===")
+            
+            if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                print("=== SUBMIT Response: \(responseString) ===")
+            }
+            
+            DispatchQueue.main.async {
+                completion((200...299).contains(status))
+            }
+        }.resume()
+    }
+    
+    // MARK: - Teacher APIs
+    
     // PDF hochladen (Lehrer -> RPi)
-    func uploadTest(group: String,
+    // POST /api/teacher/tests
+    func uploadTest(klasse: String,
+                    fach: String,
                     fileName: String,
                     fileData: Data,
                     completion: @escaping (Bool) -> Void) {
 
         let url = URL(string: APIConfig.baseURL + "/api/teacher/tests")!
+        
+        print("=== UPLOAD URL: \(url.absoluteString) ===")
+        print("=== UPLOAD Class: \(klasse), Subject: \(fach) ===")
+        print("=== UPLOAD Filename: \(fileName) ===")
+        print("=== UPLOAD Data Size: \(fileData.count) bytes ===")
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("TEACHER", forHTTPHeaderField: "X-ROLE")
@@ -101,10 +186,15 @@ class RPiService {
 
         var body = Data()
 
-        // GROUP FIELD
+        // CLASS FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"group\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(group)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"class\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(klasse)\r\n".data(using: .utf8)!)
+
+        // SUBJECT FIELD
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"subject\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(fach)\r\n".data(using: .utf8)!)
 
         // PDF FIELD
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -116,54 +206,141 @@ class RPiService {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         request.httpBody = body
+        
+        print("=== UPLOAD Body Size: \(body.count) bytes ===")
 
-        URLSession.shared.dataTask(with: request) { _, response, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("=== UPLOAD Error: \(error.localizedDescription) ===")
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
+            }
+            
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("=== UPLOAD Status: \(status) ===")
+            
+            if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                print("=== UPLOAD Response: \(responseString) ===")
+            }
+            
             DispatchQueue.main.async {
                 completion((200...299).contains(status))
             }
         }.resume()
     }
-
-    // Schueler-Abgabe hochladen
-    func submitTest(group: String,
-                    filename: String,
-                    pdfData: Data,
-                    completion: @escaping (Bool) -> Void) {
-
-        let encodedGroup = group.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? group
-        let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
-        let url = URL(string: APIConfig.baseURL + "/api/student/tests/\(encodedGroup)/\(encodedFile)/submit")!
+    
+    // Abgabenliste holen
+    // GET /api/teacher/submissions/{klasse}/{fach}/{testName}
+    func fetchSubmissions(klasse: String, fach: String, testName: String, completion: @escaping ([Submission]) -> Void) {
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let encodedFach = fach.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fach
+        let encodedTest = testName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? testName
+        
+        let url = URL(string: APIConfig.baseURL + "/api/teacher/submissions/\(encodedKlasse)/\(encodedFach)/\(encodedTest)")!
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("STUDENT", forHTTPHeaderField: "X-ROLE")
+        request.setValue("TEACHER", forHTTPHeaderField: "X-ROLE")
 
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var body = Data()
-
-        // GROUP FIELD
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"group\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(group)\r\n".data(using: .utf8)!)
-
-        // PDF FIELD
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
-        body.append(pdfData)
-        body.append("\r\n".data(using: .utf8)!)
-
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        request.httpBody = body
-
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            DispatchQueue.main.async {
-                completion((200...299).contains(status))
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard
+                let data,
+                let list = try? JSONDecoder().decode([Submission].self, from: data)
+            else {
+                completion([])
+                return
             }
+            completion(list)
+        }.resume()
+    }
+    
+    // Einzelne Abgabe herunterladen
+    // GET /api/teacher/submissions/{klasse}/{fach}/{testName}/{filename}
+    func downloadSubmission(klasse: String, fach: String, testName: String, filename: String, completion: @escaping (URL?) -> Void) {
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let encodedFach = fach.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fach
+        let encodedTest = testName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? testName
+        let encodedFile = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        
+        let url = URL(string: APIConfig.baseURL + "/api/teacher/submissions/\(encodedKlasse)/\(encodedFach)/\(encodedTest)/\(encodedFile)")!
+        var request = URLRequest(url: url)
+        request.setValue("TEACHER", forHTTPHeaderField: "X-ROLE")
+
+        print("=== Download Submission URL: \(url.absoluteString) ===")
+
+        URLSession.shared.downloadTask(with: request) { tempURL, response, error in
+            if let error {
+                print("=== Download Submission Error: \(error) ===")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("=== Download Submission Status: \(status) ===")
+
+            guard let tempURL else {
+                print("=== Download Submission: tempURL is nil ===")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let examsRoot = docs.appendingPathComponent("Exams", isDirectory: true)
+            let klasseDir = examsRoot.appendingPathComponent(klasse, isDirectory: true)
+            let fachDir = klasseDir.appendingPathComponent(fach, isDirectory: true)
+            let submissionsDir = fachDir.appendingPathComponent("Submissions", isDirectory: true)
+            try? FileManager.default.createDirectory(at: submissionsDir, withIntermediateDirectories: true)
+            let dest = submissionsDir.appendingPathComponent(filename)
+
+            try? FileManager.default.removeItem(at: dest)
+
+            do {
+                try FileManager.default.copyItem(at: tempURL, to: dest)
+                print("=== Submission gespeichert: \(dest.path) ===")
+
+                let fileSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
+                print("=== Submission Größe: \(fileSize) bytes ===")
+
+                DispatchQueue.main.async { completion(dest) }
+            } catch {
+                print("=== Copy Submission Error: \(error) ===")
+                DispatchQueue.main.async { completion(nil) }
+            }
+        }.resume()
+    }
+    
+    // MARK: - Helper APIs
+    
+    // Liste aller Klassen holen
+    func fetchClasses(completion: @escaping ([String]) -> Void) {
+        let url = URL(string: APIConfig.baseURL + "/api/classes")!
+        
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard
+                let data,
+                let list = try? JSONDecoder().decode([String].self, from: data)
+            else {
+                completion([])
+                return
+            }
+            completion(list)
+        }.resume()
+    }
+    
+    // Liste aller Fächer einer Klasse holen
+    func fetchSubjects(klasse: String, completion: @escaping ([String]) -> Void) {
+        let encodedKlasse = klasse.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? klasse
+        let url = URL(string: APIConfig.baseURL + "/api/subjects/\(encodedKlasse)")!
+        
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard
+                let data,
+                let list = try? JSONDecoder().decode([String].self, from: data)
+            else {
+                completion([])
+                return
+            }
+            completion(list)
         }.resume()
     }
 }

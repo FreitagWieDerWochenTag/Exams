@@ -1,13 +1,13 @@
 // ContentView.swift
 // 1. Microsoft Login
-// 2. Wenn Rolle bekannt -> automatisch zur GroupEntryView
+// 2. Wenn Rolle bekannt -> automatisch zur entsprechenden Entry View
 // 3. Wenn Rolle unbekannt und fertig geladen -> manuelle Auswahl
 
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var auth: AuthViewModel
-    @State private var goToGroup = false
+    @State private var goToNext = false
 
     var body: some View {
         NavigationStack {
@@ -27,7 +27,7 @@ struct ContentView: View {
                 if !auth.isSignedIn {
                     // --- Nicht eingeloggt ---
                     if auth.isBusy {
-                        ProgressView("Anmeldung wird geprueft ...")
+                        ProgressView("Anmeldung wird geprüft ...")
                     } else {
                         Text("Melde dich mit deinem Schulkonto an.")
                             .font(.subheadline)
@@ -63,7 +63,7 @@ struct ContentView: View {
 
                 } else if auth.role == .unknown {
                     // --- Rolle konnte nicht erkannt werden ---
-                    Text("Waehle deine Rolle")
+                    Text("Wähle deine Rolle")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -72,7 +72,7 @@ struct ContentView: View {
                             RoleButton(title: "Lehrer", icon: "person.fill", color: .blue)
                         }
                         Button { auth.setRoleManually(.student) } label: {
-                            RoleButton(title: "Schueler", icon: "graduationcap.fill", color: .green)
+                            RoleButton(title: "Schüler", icon: "graduationcap.fill", color: .green)
                         }
                     }
                     .padding(.horizontal, 40)
@@ -94,17 +94,28 @@ struct ContentView: View {
             }
             .onChange(of: auth.role) { _, newRole in
                 if auth.isSignedIn && newRole != .unknown {
-                    goToGroup = true
+                    goToNext = true
                 }
             }
             .onChange(of: auth.isSignedIn) { _, signedIn in
                 if signedIn && auth.role != .unknown {
-                    goToGroup = true
+                    goToNext = true
                 }
             }
-            .navigationDestination(isPresented: $goToGroup) {
-                GroupEntryView()
-                    .environmentObject(auth)
+            .navigationDestination(isPresented: $goToNext) {
+                if auth.role == .teacher {
+                    TeacherClassSelectionView()
+                        .environmentObject(auth)
+                } else {
+                    // Prüfe ob Schüler bereits eine Klasse gespeichert hat
+                    if let savedKlasse = UserDefaults.standard.string(forKey: "studentKlasse"), !savedKlasse.isEmpty {
+                        FachSelectionView(klasse: savedKlasse, isStudent: true)
+                            .environmentObject(auth)
+                    } else {
+                        ClassSelectionView()
+                            .environmentObject(auth)
+                    }
+                }
             }
         }
     }

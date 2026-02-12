@@ -1,80 +1,78 @@
-// GroupEntryView.swift
-// Zeigt User-Info, Gruppen-Eingabe.
-// Oben links: Abmelden (zurueck zum Login)
-// Oben rechts: Demo-Wechsel Lehrer/Schueler
+// ClassSelectionView.swift
+// Einmalige Klassenauswahl für Schüler (wird gespeichert)
 
 import SwiftUI
 
-struct GroupEntryView: View {
+struct ClassSelectionView: View {
     @EnvironmentObject var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
-
-    @State private var groupCode: String = ""
+    
+    @State private var klasse: String = ""
     @State private var showNext = false
-
-    private var isTeacher: Bool { auth.role == .teacher }
-
+    
     private var canContinue: Bool {
-        !groupCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !klasse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-
+    
     var body: some View {
         VStack(spacing: 24) {
-
+            
             Spacer()
-
+            
             // User-Info
             VStack(spacing: 4) {
-                Image(systemName: isTeacher ? "person.fill" : "graduationcap.fill")
+                Image(systemName: "graduationcap.fill")
                     .font(.system(size: 50))
-                    .foregroundStyle(isTeacher ? .blue : .green)
+                    .foregroundStyle(.green)
                 Text(auth.userName)
                     .font(.title3.bold())
                 Text(auth.userEmail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text(isTeacher ? "Lehrer" : "Schueler")
+                Text("Schüler")
                     .font(.caption)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
-                    .background(isTeacher ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
-                    .foregroundStyle(isTeacher ? .blue : .green)
+                    .background(Color.green.opacity(0.1))
+                    .foregroundStyle(.green)
                     .clipShape(Capsule())
             }
-
-            Text("Gib deine Gruppe ein")
+            
+            Text("Gib deine Klasse ein")
                 .foregroundStyle(.secondary)
-
-            TextField("z.B. 4AHITS", text: $groupCode)
+            
+            TextField("z.B. 5BHIT", text: $klasse)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled(true)
                 .keyboardType(.asciiCapable)
                 .submitLabel(.done)
                 .onSubmit {
-                    if canContinue { showNext = true }
+                    if canContinue {
+                        saveClassAndContinue()
+                    }
                 }
                 .padding()
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding(.horizontal, 40)
-
+            
             Button {
-                showNext = true
+                saveClassAndContinue()
             } label: {
                 Text("Weiter")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(canContinue ? Color.blue : Color.gray.opacity(0.3))
+                    .background(canContinue ? Color.green : Color.gray.opacity(0.3))
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
             .padding(.horizontal, 40)
             .disabled(!canContinue)
-
+            
             Spacer()
         }
-        .navigationTitle("Gruppe")
+        .navigationTitle("Klasse")
         .navigationBarBackButtonHidden(true)
         .toolbar {
             // Abmelden (links)
@@ -86,27 +84,17 @@ struct GroupEntryView: View {
                     Text("Abmelden")
                 }
             }
-            // Demo: Rolle wechseln (rechts)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    auth.setRoleManually(isTeacher ? .student : .teacher)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(isTeacher ? "Schueler" : "Lehrer")
-                            .font(.subheadline)
-                    }
-                }
-            }
         }
         .navigationDestination(isPresented: $showNext) {
-            if isTeacher {
-                TeacherView(group: groupCode)
-                    .environmentObject(auth)
-            } else {
-                StudentView(group: groupCode)
-                    .environmentObject(auth)
-            }
+            FachSelectionView(klasse: klasse, isStudent: true)
+                .environmentObject(auth)
         }
+    }
+    
+    private func saveClassAndContinue() {
+        guard canContinue else { return }
+        // Klasse speichern für Schüler
+        UserDefaults.standard.set(klasse, forKey: "studentKlasse")
+        showNext = true
     }
 }
